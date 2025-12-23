@@ -6,6 +6,7 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const apiUrl = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:3001'
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
@@ -20,9 +21,24 @@ export default function Login() {
     e.preventDefault()
     setLoading(true)
     setError(null)
-    const { error } = await supabase.auth.signUp({ email, password })
-    if (error) setError(error.message)
-    setLoading(false)
+    try {
+      const r = await fetch(`${apiUrl.replace(/\/+$/, '')}/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      })
+      const data = await r.json().catch(() => null)
+      if (!r.ok) {
+        setError((data && (data.message || data.error)) ? String(data.message || data.error) : 'Erro ao cadastrar')
+        return
+      }
+      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error) setError(error.message)
+    } catch (e: any) {
+      setError(e?.message ? String(e.message) : 'Erro ao cadastrar')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -44,4 +60,3 @@ export default function Login() {
     </div>
   )
 }
-
