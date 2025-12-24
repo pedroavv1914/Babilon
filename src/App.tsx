@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import Login from './pages/Login'
+import Register from './pages/Register'
 import Dashboard from './pages/Dashboard'
 import Header from './components/Header'
 import Nav from './components/Nav'
@@ -30,6 +31,7 @@ function App() {
         {session ? <Nav /> : null}
         <Routes>
           <Route path="/login" element={session ? <Navigate to="/" replace /> : <Login />} />
+          <Route path="/register" element={session ? <Navigate to="/" replace /> : <Register />} />
           <Route path="/" element={session ? <Dashboard /> : <Navigate to="/login" replace />} />
           <Route path="/settings" element={session ? <Settings /> : <Navigate to="/login" replace />} />
           <Route path="/incomes" element={session ? <Incomes /> : <Navigate to="/login" replace />} />
