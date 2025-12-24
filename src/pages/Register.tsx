@@ -1,6 +1,5 @@
 import { useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
-import { supabase } from '../lib/supabaseClient'
+import { Link } from 'react-router-dom'
 
 export default function Register() {
   const [name, setName] = useState('')
@@ -8,13 +7,14 @@ export default function Register() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const navigate = useNavigate()
+  const [success, setSuccess] = useState<string | null>(null)
   const apiUrl = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:3001'
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
     setError(null)
+    setSuccess(null)
     try {
       const payload: any = { email, password }
       if (name.trim()) payload.name = name.trim()
@@ -28,14 +28,7 @@ export default function Register() {
         setError((data && (data.message || data.error)) ? String(data.message || data.error) : 'Erro ao cadastrar')
         return
       }
-
-      const { error } = await supabase.auth.signInWithPassword({ email, password })
-      if (error) {
-        setError(error.message)
-        return
-      }
-
-      navigate('/', { replace: true })
+      setSuccess('Conta criada. Confira seu e-mail e clique no link de confirmação para ativar o acesso.')
     } catch (e: any) {
       setError(e?.message ? String(e.message) : 'Erro ao cadastrar')
     } finally {
@@ -49,7 +42,8 @@ export default function Register() {
       <form onSubmit={handleRegister} className="space-y-3">
         <input className="w-full border rounded px-3 py-2" placeholder="Nome (opcional)" value={name} onChange={(e) => setName(e.target.value)} />
         <input className="w-full border rounded px-3 py-2" placeholder="E-mail" value={email} onChange={(e) => setEmail(e.target.value)} />
-        <input className="w-full border rounded px-3 py-2" placeholder="Senha" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+        <input className="w-full border rounded px-3 py-2" placeholder="Senha (mín. 8 caracteres)" type="password" minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} />
+        {success ? <div className="text-green-700 text-sm">{success}</div> : null}
         {error ? <div className="text-red-600 text-sm">{error}</div> : null}
         <button className="w-full bg-slate-900 text-white rounded py-2" disabled={loading}>
           {loading ? 'Processando...' : 'Criar conta'}
@@ -63,4 +57,3 @@ export default function Register() {
     </div>
   )
 }
-
