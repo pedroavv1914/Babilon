@@ -16,8 +16,7 @@ export default function Register() {
     setError(null)
     setSuccess(null)
     try {
-      const payload: any = { email, password }
-      if (name.trim()) payload.name = name.trim()
+      const payload: any = { email, password, name: name.trim() }
       const r = await fetch(`${apiUrl.replace(/\/+$/, '')}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -40,7 +39,7 @@ export default function Register() {
     <div className="max-w-sm mx-auto mt-12 bg-white border rounded p-6">
       <h1 className="text-lg font-semibold mb-4">Criar conta</h1>
       <form onSubmit={handleRegister} className="space-y-3">
-        <input className="w-full border rounded px-3 py-2" placeholder="Nome (opcional)" value={name} onChange={(e) => setName(e.target.value)} />
+        <input className="w-full border rounded px-3 py-2" placeholder="Nome" required value={name} onChange={(e) => setName(e.target.value)} />
         <input className="w-full border rounded px-3 py-2" placeholder="E-mail" value={email} onChange={(e) => setEmail(e.target.value)} />
         <input className="w-full border rounded px-3 py-2" placeholder="Senha (mín. 8 caracteres)" type="password" minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} />
         {success ? <div className="text-green-700 text-sm">{success}</div> : null}
