@@ -13,7 +13,14 @@ export default function Login() {
     setLoading(true)
     setError(null)
     const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) setError(error.message)
+    if (error) {
+      const msg = String(error.message || '')
+      if (msg.toLowerCase().includes('email not confirmed')) {
+        setError('Confirme seu e-mail antes de entrar.')
+      } else {
+        setError(msg)
+      }
+    }
     setLoading(false)
   }
 
