@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 
 export default function Login() {
@@ -6,7 +7,6 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const apiUrl = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:3001'
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
@@ -15,30 +15,6 @@ export default function Login() {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) setError(error.message)
     setLoading(false)
-  }
-
-  async function handleSignup(e: React.MouseEvent) {
-    e.preventDefault()
-    setLoading(true)
-    setError(null)
-    try {
-      const r = await fetch(`${apiUrl.replace(/\/+$/, '')}/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
-      })
-      const data = await r.json().catch(() => null)
-      if (!r.ok) {
-        setError((data && (data.message || data.error)) ? String(data.message || data.error) : 'Erro ao cadastrar')
-        return
-      }
-      const { error } = await supabase.auth.signInWithPassword({ email, password })
-      if (error) setError(error.message)
-    } catch (e: any) {
-      setError(e?.message ? String(e.message) : 'Erro ao cadastrar')
-    } finally {
-      setLoading(false)
-    }
   }
 
   return (
@@ -53,9 +29,9 @@ export default function Login() {
         </button>
       </form>
       <div className="text-sm mt-4">
-        <button className="underline" onClick={handleSignup} disabled={loading}>
+        <Link className="underline" to="/register">
           Criar conta
-        </button>
+        </Link>
       </div>
     </div>
   )
