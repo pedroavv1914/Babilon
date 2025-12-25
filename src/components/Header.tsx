@@ -38,7 +38,7 @@ export default function Header({ session }: { session: any }) {
     <header className="sticky top-0 z-50">
       {/* HEADER BASE */}
       <div className="bg-[#0B1324] border-b border-[#17233A]">
-        <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8">
+        <div className="w-full px-4 sm:px-6 lg:px-8">
           <div className="flex h-16 items-center justify-between">
             {/* BRAND */}
             <div className="flex items-center gap-4">
@@ -91,7 +91,7 @@ export default function Header({ session }: { session: any }) {
       {/* NAVBAR */}
       {session && (
         <div className="bg-[#0B1324]/95 border-b border-[#17233A] backdrop-blur">
-          <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8">
+          <div className="w-full px-4 sm:px-6 lg:px-8">
             {/* DESKTOP */}
             <nav className="hidden lg:flex items-center gap-1 py-2">
               {nav.map((item) => (
