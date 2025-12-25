@@ -3,7 +3,6 @@ import Login from './pages/Login'
 import Register from './pages/Register'
 import Dashboard from './pages/Dashboard'
 import Header from './components/Header'
-import Nav from './components/Nav'
 import Settings from './pages/Settings'
 import Categories from './pages/Categories'
 import Budgets from './pages/Budgets'
@@ -25,10 +24,9 @@ function App() {
   }, [])
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-[#F5F2EB]">
       <Header session={session} />
-      <div className="max-w-6xl mx-auto p-4">
-        {session ? <Nav /> : null}
+      <div className="w-full p-4">
         <Routes>
           <Route path="/login" element={session ? <Navigate to="/" replace /> : <Login />} />
           <Route path="/register" element={session ? <Navigate to="/" replace /> : <Register />} />
