@@ -206,10 +206,8 @@ export default function Dashboard() {
   if (loading) {
     return (
       <div className="mt-8">
-        <div className="mx-auto w-full max-w-[1400px] px-4 sm:px-6 lg:px-8">
-          <div className="rounded-2xl border border-[#D6D3C8] bg-[#FBFAF7] p-5 text-sm text-[#6B7280] shadow-[0_10px_30px_rgba(11,19,36,0.10)]">
-            Carregando…
-          </div>
+        <div className="rounded-2xl border border-[#D6D3C8] bg-[#FBFAF7] p-5 text-sm text-[#6B7280] shadow-[0_10px_30px_rgba(11,19,36,0.10)]">
+          Carregando…
         </div>
       </div>
     )
@@ -217,8 +215,7 @@ export default function Dashboard() {
 
   return (
     <div className="w-full">
-      {/* CONTAINER LARGO (igual Rendas) */}
-      <div className="mx-auto w-full max-w-[1400px] px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+      <div className="w-full py-6 space-y-6">
         {/* HERO CARD */}
         <div className="rounded-2xl border border-[#D6D3C8] bg-[#FBFAF7] shadow-[0_14px_40px_rgba(11,19,36,0.10)] overflow-hidden">
           <div className="px-5 py-5 sm:px-6 lg:px-8">
