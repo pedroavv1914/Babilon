@@ -5,6 +5,7 @@ import { getUserId } from '../lib/auth'
 type Income = { id: number; amount: number; month: number; year: number; rule_percent: number | null; created_at: string }
 type UserSettings = { pay_percent: number }
 type Allocation = { income_id: number; amount: number }
+type DeleteTarget = { id: number; amount: number }
 
 export default function Incomes() {
   const now = new Date()
@@ -26,6 +27,8 @@ export default function Incomes() {
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
 
   const fmt = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
   const defaultPercent = typeof settings?.pay_percent === 'number' ? settings.pay_percent : 0.1
@@ -193,6 +196,30 @@ export default function Incomes() {
     setPercentMode('default')
   }
 
+  async function deleteIncome(id: number) {
+    if (!uid) return
+    const target = rows.find((r) => r.id === id)
+    if (!target) return
+    setDeleteTarget({ id: target.id, amount: target.amount })
+  }
+
+  async function confirmDelete() {
+    if (!uid) return
+    if (!deleteTarget) return
+    setError(null)
+    setDeletingId(deleteTarget.id)
+    try {
+      const { error } = await supabase.from('incomes').delete().eq('id', deleteTarget.id).eq('user_id', uid)
+      if (error) throw error
+      await load()
+      setDeleteTarget(null)
+    } catch (e: any) {
+      setError(typeof e?.message === 'string' ? e.message : 'Erro ao excluir renda')
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
   if (loading) return <div className="mt-8">Carregando...</div>
 
   return (
@@ -329,6 +356,7 @@ export default function Incomes() {
                     <th className="py-2 pr-3">Ouro</th>
                     <th className="py-2 pr-3">Disponível</th>
                     <th className="py-2 pr-3">Modo</th>
+                    <th className="py-2 pr-0 text-right">Ações</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -353,6 +381,16 @@ export default function Incomes() {
                         >
                           {r.mode === 'custom' ? 'personalizado' : 'padrão'}
                         </span>
+                      </td>
+                      <td className="py-2 pr-0 text-right">
+                        <button
+                          type="button"
+                          className="rounded-lg border border-[#E4E1D6] bg-white px-3 py-1.5 text-xs text-[#991B1B] hover:bg-[#FEF2F2] disabled:opacity-50"
+                          onClick={() => deleteIncome(r.id)}
+                          disabled={deletingId === r.id}
+                        >
+                          Excluir
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -383,6 +421,44 @@ export default function Incomes() {
           </div>
         </div>
       </div>
+
+      {deleteTarget ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          onMouseDown={() => (deletingId ? undefined : setDeleteTarget(null))}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-[#E4E1D6] bg-white shadow-[0_24px_80px_rgba(11,19,36,0.25)]"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="p-5">
+              <div className="font-semibold text-[#111827]">Confirmar exclusão</div>
+              <div className="mt-2 text-sm text-[#6B7280]">
+                Você está prestes a excluir a renda de{' '}
+                <span className="font-semibold text-[#111827]">{fmt(deleteTarget.amount)}</span>. Essa ação não pode ser desfeita.
+              </div>
+              <div className="mt-5 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  className="rounded-xl border border-[#E4E1D6] bg-white px-4 py-2 text-sm text-[#111827] hover:bg-[#FBFAF7] disabled:opacity-50"
+                  onClick={() => setDeleteTarget(null)}
+                  disabled={Boolean(deletingId)}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  className="rounded-xl bg-[#991B1B] px-4 py-2 text-sm text-white hover:bg-[#7F1D1D] disabled:opacity-50"
+                  onClick={() => confirmDelete()}
+                  disabled={deletingId === deleteTarget.id}
+                >
+                  Excluir
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
