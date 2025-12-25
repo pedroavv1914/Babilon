@@ -220,74 +220,209 @@ export default function Incomes() {
     }
   }
 
-  if (loading) return <div className="mt-8">Carregando...</div>
+  if (loading) {
+    return (
+      <div className="mt-8">
+        <div className="rounded-xl border border-[#D6D3C8] bg-[#FBFAF7] p-5 text-sm text-[#6B7280] shadow-[0_6px_18px_rgba(11,19,36,0.08)]">
+          Carregando…
+        </div>
+      </div>
+    )
+  }
+
+  // --- UI helpers (combinando com Arkádion / Babilônia Moderna) ---
+  const Card = ({
+    title,
+    subtitle,
+    right,
+    children,
+    className = '',
+  }: {
+    title?: string
+    subtitle?: string
+    right?: React.ReactNode
+    children: React.ReactNode
+    className?: string
+  }) => (
+    <section
+      className={`rounded-2xl border border-[#D6D3C8] bg-[#FBFAF7] shadow-[0_10px_30px_rgba(11,19,36,0.10)] ${className}`}
+    >
+      {(title || subtitle || right) && (
+        <header className="px-5 pt-5 pb-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              {title && (
+                <h3 className="font-[ui-serif,Georgia,serif] text-[18px] tracking-[-0.3px] text-[#111827]">
+                  {title}
+                </h3>
+              )}
+              {subtitle && <div className="mt-1 text-xs text-[#6B7280]">{subtitle}</div>}
+              <div className="mt-3 h-[2px] w-16 rounded-full bg-[#C2A14D]" />
+            </div>
+            {right}
+          </div>
+        </header>
+      )}
+      <div className="px-5 pb-5">{children}</div>
+    </section>
+  )
+
+  const Stat = ({
+    label,
+    value,
+    hint,
+    tone = 'neutral',
+  }: {
+    label: string
+    value: string
+    hint?: string
+    tone?: 'neutral' | 'ok' | 'warn'
+  }) => {
+    const toneCls = tone === 'ok' ? 'text-[#2E7D32]' : tone === 'warn' ? 'text-[#D97706]' : 'text-[#111827]'
+    return (
+      <div className="rounded-2xl border border-[#D6D3C8] bg-[#FBFAF7] p-5 shadow-[0_10px_30px_rgba(11,19,36,0.10)]">
+        <div className="flex items-center justify-between">
+          <div className="text-sm text-[#6B7280]">{label}</div>
+          <span className="h-2 w-2 rounded-full bg-[#C2A14D]" />
+        </div>
+        <div className={`mt-2 text-3xl font-semibold tracking-[-0.6px] ${toneCls}`}>{value}</div>
+        {hint && <div className="mt-2 text-xs text-[#6B7280]">{hint}</div>}
+        <div className="mt-4 h-px bg-[#E4E1D6]" />
+        <div className="mt-3 text-[11px] text-[#6B7280]">Ciclo mensal</div>
+      </div>
+    )
+  }
+
+  const Pill = ({
+    children,
+    variant = 'neutral',
+  }: {
+    children: React.ReactNode
+    variant?: 'neutral' | 'gold' | 'sky'
+  }) => {
+    const cls =
+      variant === 'gold'
+        ? 'border-[#C2A14D]/40 bg-[#F5F2EB] text-[#5A4A1A]'
+        : variant === 'sky'
+          ? 'border-[#0EA5E9]/30 bg-[#E6F6FE] text-[#0B5E86]'
+          : 'border-[#D6D3C8] bg-white text-[#6B7280]'
+    return <span className={`text-xs rounded-full border px-2 py-1 ${cls}`}>{children}</span>
+  }
 
   return (
     <div className="w-full space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="font-[ui-serif,Georgia,serif] text-2xl tracking-[-0.6px] text-[#111827]">Rendas</div>
-          <div className="mt-1 text-xs text-[#6B7280]">Veja o ciclo do mês e quanto vira “ouro guardado”.</div>
-        </div>
+      {/* HERO (topo) */}
+      <div className="rounded-2xl border border-[#D6D3C8] bg-[#FBFAF7] shadow-[0_14px_40px_rgba(11,19,36,0.10)] overflow-hidden">
+        <div className="px-5 py-5 sm:px-6 lg:px-8">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-2xl border border-[#C2A14D]/45 bg-white shadow-[0_10px_30px_rgba(11,19,36,0.12)] flex items-center justify-center">
+                  <span className="h-2.5 w-2.5 rounded-full bg-[#C2A14D]" />
+                </div>
+                <div>
+                  <div className="font-[ui-serif,Georgia,serif] text-2xl tracking-[-0.6px] text-[#111827]">
+                    Rendas
+                  </div>
+                  <div className="mt-1 text-xs text-[#6B7280]">
+                    Registre entradas e aplique o “pague-se primeiro” — antes de qualquer gasto.
+                  </div>
+                </div>
+              </div>
 
-        <div className="flex gap-2">
-          <select
-            className="rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm shadow-[0_6px_18px_rgba(11,19,36,0.08)]"
-            value={filterMonth}
-            onChange={(e) => setFilterMonth(Number(e.target.value))}
-          >
-            {monthOptions.map((m) => (
-              <option key={m} value={m}>
-                {String(m).padStart(2, '0')}
-              </option>
-            ))}
-          </select>
-          <select
-            className="rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm shadow-[0_6px_18px_rgba(11,19,36,0.08)]"
-            value={filterYear}
-            onChange={(e) => setFilterYear(Number(e.target.value))}
-          >
-            {yearOptions.map((y) => (
-              <option key={y} value={y}>
-                {y}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <Pill variant="gold">Padrão: {(defaultPercent * 100).toFixed(0)}%</Pill>
+                <Pill variant="sky">
+                  Mês: {String(filterMonth).padStart(2, '0')}/{filterYear}
+                </Pill>
+                <Pill>Itens: {rows.length}</Pill>
+              </div>
+            </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="rounded-xl border border-[#D6D3C8] bg-[#FBFAF7] p-4 shadow-[0_6px_18px_rgba(11,19,36,0.08)]">
-          <div className="text-sm text-[#6B7280]">Renda do mês</div>
-          <div className="mt-1 text-2xl font-semibold text-[#111827]">{fmt(totals.incomeTotal)}</div>
-        </div>
-        <div className="rounded-xl border border-[#D6D3C8] bg-[#FBFAF7] p-4 shadow-[0_6px_18px_rgba(11,19,36,0.08)]">
-          <div className="text-sm text-[#6B7280]">Ouro guardado</div>
-          <div className="mt-1 text-2xl font-semibold text-[#111827]">{fmt(totals.savingsTotal)}</div>
-          <div className="mt-1 text-xs text-[#6B7280]">Taxa: {(totals.savingsRate * 100).toFixed(1)}%</div>
-        </div>
-        <div className="rounded-xl border border-[#D6D3C8] bg-[#FBFAF7] p-4 shadow-[0_6px_18px_rgba(11,19,36,0.08)]">
-          <div className="text-sm text-[#6B7280]">Disponível para gastar</div>
-          <div className="mt-1 text-2xl font-semibold text-[#111827]">{fmt(totals.availableTotal)}</div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="rounded-xl border border-[#D6D3C8] bg-[#FBFAF7] p-5 shadow-[0_6px_18px_rgba(11,19,36,0.08)]">
-          <div className="flex items-center justify-between gap-3">
-            <div className="font-semibold text-[#111827]">Cadastrar renda</div>
-            <span className="text-xs text-[#6B7280] rounded-full border border-[#D6D3C8] bg-white px-2 py-1">Entrada</span>
+            <div className="flex gap-2">
+              <select
+                className="rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm shadow-[0_10px_30px_rgba(11,19,36,0.10)]"
+                value={filterMonth}
+                onChange={(e) => setFilterMonth(Number(e.target.value))}
+              >
+                {monthOptions.map((m) => (
+                  <option key={m} value={m}>
+                    {String(m).padStart(2, '0')}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm shadow-[0_10px_30px_rgba(11,19,36,0.10)]"
+                value={filterYear}
+                onChange={(e) => setFilterYear(Number(e.target.value))}
+              >
+                {yearOptions.map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
+        </div>
 
-          <form onSubmit={addIncome} className="mt-4 space-y-3">
+        {/* Ornamento dourado */}
+        <div
+          className="h-[3px] w-full"
+          style={{
+            background:
+              'linear-gradient(90deg, rgba(194,161,77,0) 0%, rgba(194,161,77,0.9) 50%, rgba(194,161,77,0) 100%)',
+          }}
+        />
+      </div>
+
+      {/* STATS */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Stat label="Renda do mês" value={fmt(totals.incomeTotal)} hint="Somatório das entradas filtradas" />
+        <Stat
+          label="Ouro guardado"
+          value={fmt(totals.savingsTotal)}
+          hint={`Taxa total: ${(totals.savingsRate * 100).toFixed(1)}%`}
+          tone="ok"
+        />
+        <Stat
+          label="Disponível para gastar"
+          value={fmt(totals.availableTotal)}
+          hint="Renda − ouro guardado"
+          tone={totals.availableTotal < 0 ? 'warn' : 'neutral'}
+        />
+      </div>
+
+      {/* GRID PRINCIPAL */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        {/* FORM (mais “produto”) */}
+        <Card
+          title="Cadastrar renda"
+          subtitle="Defina data, valor e o percentual aplicado nesta entrada."
+          right={<Pill>Entrada</Pill>}
+          className="lg:col-span-4"
+        >
+          <form onSubmit={addIncome} className="space-y-3">
             <div>
               <label className="block text-xs text-[#6B7280] mb-1">Data</label>
-              <input className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm" type="date" value={incomeDate} onChange={(e) => setIncomeDate(e.target.value)} />
+              <input
+                className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm shadow-[0_10px_30px_rgba(11,19,36,0.06)] focus:outline-none focus:ring-2 focus:ring-[#C2A14D]/40"
+                type="date"
+                value={incomeDate}
+                onChange={(e) => setIncomeDate(e.target.value)}
+              />
             </div>
 
             <div>
               <label className="block text-xs text-[#6B7280] mb-1">Valor</label>
-              <input className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm" type="number" step="0.01" placeholder="Ex.: 3500" value={amount} onChange={(e) => setAmount(Number(e.target.value))} />
+              <input
+                className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm shadow-[0_10px_30px_rgba(11,19,36,0.06)] focus:outline-none focus:ring-2 focus:ring-[#C2A14D]/40"
+                type="number"
+                step="0.01"
+                placeholder="Ex.: 3500"
+                value={amount}
+                onChange={(e) => setAmount(Number(e.target.value))}
+              />
             </div>
 
             <div>
@@ -295,18 +430,21 @@ export default function Incomes() {
                 <label className="block text-xs text-[#6B7280] mb-1">Percentual do “pague-se primeiro”</label>
                 <span className="text-xs text-[#6B7280]">Padrão: {(defaultPercent * 100).toFixed(0)}%</span>
               </div>
-              <div className="mt-1 flex flex-col gap-2">
+
+              <div className="mt-1 space-y-2">
                 <label className="flex items-center gap-2 text-sm text-[#111827]">
                   <input type="radio" name="percentMode" checked={percentMode === 'default'} onChange={() => setPercentMode('default')} />
                   Usar percentual padrão
                 </label>
+
                 <label className="flex items-center gap-2 text-sm text-[#111827]">
                   <input type="radio" name="percentMode" checked={percentMode === 'custom'} onChange={() => setPercentMode('custom')} />
                   Personalizar para esta renda
                 </label>
+
                 {percentMode === 'custom' ? (
                   <input
-                    className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
+                    className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm shadow-[0_10px_30px_rgba(11,19,36,0.06)] focus:outline-none focus:ring-2 focus:ring-[#C2A14D]/40"
                     type="number"
                     step="0.01"
                     placeholder="Ex.: 0.10 para 10%"
@@ -317,36 +455,53 @@ export default function Incomes() {
               </div>
             </div>
 
-            <div className="rounded-xl border border-[#E4E1D6] bg-white p-3">
-              <div className="text-xs text-[#6B7280]">Prévia</div>
-              <div className="mt-1 text-sm text-[#111827]">
+            {/* PRÉVIA (com barras, bem Arkádion) */}
+            <div className="rounded-2xl border border-[#E4E1D6] bg-white p-4 shadow-[0_10px_30px_rgba(11,19,36,0.06)]">
+              <div className="flex items-center justify-between">
+                <div className="text-xs text-[#6B7280]">Prévia</div>
+                <Pill variant="gold">{(effectivePercent * 100).toFixed(1)}%</Pill>
+              </div>
+
+              <div className="mt-2 text-sm text-[#111827]">
                 Você guarda <span className="font-semibold">{fmt(previewSavings)}</span> e fica disponível{' '}
                 <span className="font-semibold">{fmt(previewAvailable)}</span>.
               </div>
-              <div className="mt-1 text-xs text-[#6B7280]">
-                Percentual aplicado: {(effectivePercent * 100).toFixed(1)}% (0.10 = 10%).
+
+              <div className="mt-3">
+                <div className="h-2 w-full rounded-full bg-[#E7E1D4] overflow-hidden">
+                  <div className="h-full bg-[#C2A14D]" style={{ width: `${Math.min(100, Math.max(0, effectivePercent * 100))}%` }} />
+                </div>
+                <div className="mt-2 text-[11px] text-[#6B7280]">
+                  Dica: 0.10 = 10% (primeiro você paga a si mesmo).
+                </div>
               </div>
             </div>
 
-            {error ? <div className="text-red-600 text-sm">{error}</div> : null}
-            <button className="rounded-xl bg-[#111827] text-white px-4 py-2 text-sm shadow-[0_10px_30px_rgba(11,19,36,0.15)]">Salvar</button>
+            {error ? (
+              <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                {error}
+              </div>
+            ) : null}
+
+            <button
+              className="w-full rounded-xl bg-[#0B1324] text-[#FBFAF7] px-4 py-2.5 text-sm shadow-[0_14px_40px_rgba(11,19,36,0.18)] hover:bg-[#17233A] transition border border-[#17233A]"
+            >
+              Salvar renda
+            </button>
           </form>
-        </div>
+        </Card>
 
-        <div className="rounded-xl border border-[#D6D3C8] bg-[#FBFAF7] p-5 shadow-[0_6px_18px_rgba(11,19,36,0.08)] lg:col-span-2">
-          <div className="flex items-center justify-between gap-3">
-            <div className="font-semibold text-[#111827]">
-              Rendas de {String(filterMonth).padStart(2, '0')}/{filterYear}
-            </div>
-            <span className="text-xs text-[#6B7280] rounded-full border border-[#D6D3C8] bg-white px-2 py-1">
-              {rows.length} item(ns)
-            </span>
-          </div>
-
+        {/* TABELA + RECENTES */}
+        <Card
+          title={`Rendas de ${String(filterMonth).padStart(2, '0')}/${filterYear}`}
+          subtitle="Detalhamento do ouro guardado por entrada."
+          right={<Pill>{rows.length} item(ns)</Pill>}
+          className="lg:col-span-8"
+        >
           {rows.length === 0 ? (
-            <div className="mt-4 text-sm text-[#6B7280]">Sem rendas registradas neste mês.</div>
+            <div className="text-sm text-[#6B7280]">Sem rendas registradas neste mês.</div>
           ) : (
-            <div className="mt-4 overflow-x-auto">
+            <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-xs text-[#6B7280]">
@@ -376,7 +531,9 @@ export default function Incomes() {
                       <td className="py-2 pr-3">
                         <span
                           className={`text-xs rounded-full px-2 py-0.5 border ${
-                            r.mode === 'custom' ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-[#F5F2EB] text-[#374151] border-[#E4E1D6]'
+                            r.mode === 'custom'
+                              ? 'bg-amber-50 text-amber-800 border-amber-200'
+                              : 'bg-[#F5F2EB] text-[#374151] border-[#E4E1D6]'
                           }`}
                         >
                           {r.mode === 'custom' ? 'personalizado' : 'padrão'}
@@ -399,11 +556,18 @@ export default function Incomes() {
             </div>
           )}
 
-          <div className="mt-6">
-            <div className="font-semibold text-[#111827]">Últimas rendas</div>
-            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div className="mt-7 border-t border-[#E4E1D6] pt-5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="font-semibold text-[#111827]">Últimas rendas</div>
+              <Pill variant="neutral">Histórico</Pill>
+            </div>
+
+            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
               {recent.map((r) => (
-                <div key={r.id} className="rounded-xl border border-[#E4E1D6] bg-white px-3 py-2 flex items-center justify-between gap-3">
+                <div
+                  key={r.id}
+                  className="rounded-2xl border border-[#E4E1D6] bg-white px-4 py-3 flex items-center justify-between gap-3 shadow-[0_10px_30px_rgba(11,19,36,0.06)]"
+                >
                   <div className="min-w-0">
                     <div className="text-xs text-[#6B7280]">
                       {(() => {
@@ -414,14 +578,19 @@ export default function Incomes() {
                     </div>
                     <div className="text-sm font-medium text-[#111827] truncate">{fmt(r.amount)}</div>
                   </div>
-                  <span className="text-xs text-[#6B7280]">{typeof r.rule_percent === 'number' ? `${(r.rule_percent * 100).toFixed(0)}%` : `${(defaultPercent * 100).toFixed(0)}%`}</span>
+                  <span className="text-xs text-[#6B7280]">
+                    {typeof r.rule_percent === 'number'
+                      ? `${(r.rule_percent * 100).toFixed(0)}%`
+                      : `${(defaultPercent * 100).toFixed(0)}%`}
+                  </span>
                 </div>
               ))}
             </div>
           </div>
-        </div>
+        </Card>
       </div>
 
+      {/* MODAL */}
       {deleteTarget ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
@@ -432,11 +601,12 @@ export default function Incomes() {
             onMouseDown={(e) => e.stopPropagation()}
           >
             <div className="p-5">
-              <div className="font-semibold text-[#111827]">Confirmar exclusão</div>
+              <div className="font-[ui-serif,Georgia,serif] text-lg text-[#111827]">Confirmar exclusão</div>
               <div className="mt-2 text-sm text-[#6B7280]">
                 Você está prestes a excluir a renda de{' '}
                 <span className="font-semibold text-[#111827]">{fmt(deleteTarget.amount)}</span>. Essa ação não pode ser desfeita.
               </div>
+
               <div className="mt-5 flex items-center justify-end gap-2">
                 <button
                   type="button"
@@ -456,6 +626,8 @@ export default function Incomes() {
                 </button>
               </div>
             </div>
+
+            <div className="h-[2px] w-full bg-gradient-to-r from-transparent via-[#C2A14D] to-transparent" />
           </div>
         </div>
       ) : null}
