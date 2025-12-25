@@ -3,7 +3,7 @@ export default function Footer() {
 
   return (
     <footer className="mt-16 border-t border-[#D6D3C8] bg-[#FBFAF7]/80 backdrop-blur">
-      <div className="mx-auto w-full max-w-[1400px] px-4 sm:px-6 lg:px-8 py-8">
+      <div className="w-full px-4 sm:px-6 lg:px-8 py-8">
         {/* Linha superior */}
         <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
           {/* Marca */}
