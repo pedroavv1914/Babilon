@@ -19,8 +19,13 @@ export default function Login() {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) {
       const msg = String(error.message || '')
-      if (msg.toLowerCase().includes('email not confirmed')) {
+      const lower = msg.toLowerCase()
+      if (lower.includes('email not confirmed')) {
         setError('Confirme seu e-mail antes de entrar.')
+      } else if (lower.includes('invalid login credentials')) {
+        setError('E-mail ou senha incorretos. Verifique os dados e tente novamente.')
+      } else if (lower.includes('invalid') && (lower.includes('password') || lower.includes('credentials'))) {
+        setError('Não foi possível entrar com essas credenciais. Verifique e tente novamente.')
       } else {
         setError(msg)
       }
