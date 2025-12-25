@@ -36,12 +36,10 @@ export default function Header({ session }: { session: any }) {
 
   return (
     <header className="sticky top-0 z-50">
-      {/* HEADER BASE */}
       <div className="bg-[#0B1324] border-b border-[#17233A]">
-        <div className="w-full px-4 sm:px-6 lg:px-8">
-          <div className="flex h-16 items-center justify-between">
-            {/* BRAND */}
-            <div className="flex items-center gap-4">
+        <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex h-16 items-center gap-4">
+            <div className="flex items-center gap-4 shrink-0">
               <div className="relative h-10 w-10 rounded-xl bg-[#0F172A] border border-[#C2A14D]/50 flex items-center justify-center">
                 <span className="h-2.5 w-2.5 rounded-full bg-[#C2A14D]" />
               </div>
@@ -56,9 +54,34 @@ export default function Header({ session }: { session: any }) {
               </div>
             </div>
 
-            {/* USER / ACTIONS */}
             {session && (
-              <div className="flex items-center gap-3">
+              <nav className="hidden lg:flex flex-1 items-center justify-center gap-1">
+                {nav.map((item) => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    className={({ isActive }) =>
+                      [
+                        'relative px-3 py-2 rounded-xl text-sm transition whitespace-nowrap',
+                        isActive
+                          ? 'text-[#FBFAF7] bg-[#0F172A]'
+                          : 'text-[#E7E1D4] hover:bg-[#17233A]',
+                      ].join(' ')
+                    }
+                  >
+                    {item.label}
+                    <span
+                      className={`absolute left-3 right-3 bottom-1 h-[2px] rounded-full ${
+                        item.to === location.pathname ? 'bg-[#C2A14D]' : 'bg-transparent'
+                      }`}
+                    />
+                  </NavLink>
+                ))}
+              </nav>
+            )}
+
+            {session && (
+              <div className="flex items-center gap-3 shrink-0">
                 <div className="hidden sm:flex items-center gap-3 rounded-xl bg-[#0F172A] border border-[#17233A] px-3 py-2">
                   <div className="h-8 w-8 rounded-lg bg-[#0B1324] border border-[#C2A14D]/40 flex items-center justify-center text-xs font-semibold text-[#E7E1D4]">
                     {initials}
@@ -88,64 +111,34 @@ export default function Header({ session }: { session: any }) {
         </div>
       </div>
 
-      {/* NAVBAR */}
-      {session && (
-        <div className="bg-[#0B1324]/95 border-b border-[#17233A] backdrop-blur">
-          <div className="w-full px-4 sm:px-6 lg:px-8">
-            {/* DESKTOP */}
-            <nav className="hidden lg:flex items-center gap-1 py-2">
-              {nav.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  className={({ isActive }) =>
-                    [
-                      'relative px-3 py-2 rounded-xl text-sm transition',
-                      isActive
-                        ? 'text-[#FBFAF7] bg-[#0F172A]'
-                        : 'text-[#E7E1D4] hover:bg-[#17233A]',
-                    ].join(' ')
-                  }
-                >
-                  {item.label}
-                  <span
-                    className={`absolute left-3 right-3 bottom-1 h-[2px] rounded-full ${
-                      item.to === location.pathname ? 'bg-[#C2A14D]' : 'bg-transparent'
-                    }`}
-                  />
-                </NavLink>
-              ))}
-            </nav>
-
-            {/* MOBILE */}
-            {open && (
-              <div className="lg:hidden py-3">
-                <div className="rounded-xl bg-[#0F172A] border border-[#17233A] p-2 space-y-1">
-                  {nav.map((item) => (
-                    <NavLink
-                      key={item.to}
-                      to={item.to}
-                      onClick={() => setOpen(false)}
-                      className={({ isActive }) =>
-                        [
-                          'block rounded-lg px-3 py-2 text-sm transition',
-                          isActive
-                            ? 'bg-[#17233A] text-[#FBFAF7]'
-                            : 'text-[#E7E1D4] hover:bg-[#17233A]',
-                        ].join(' ')
-                      }
-                    >
-                      {item.label}
-                    </NavLink>
-                  ))}
-                </div>
+      {session && open && (
+        <div className="lg:hidden bg-[#0B1324]/95 border-b border-[#17233A] backdrop-blur">
+          <div className="w-full max-w-6xl mx-auto px-4 sm:px-6">
+            <div className="py-3">
+              <div className="rounded-xl bg-[#0F172A] border border-[#17233A] p-2 space-y-1">
+                {nav.map((item) => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    onClick={() => setOpen(false)}
+                    className={({ isActive }) =>
+                      [
+                        'block rounded-lg px-3 py-2 text-sm transition whitespace-nowrap',
+                        isActive
+                          ? 'bg-[#17233A] text-[#FBFAF7]'
+                          : 'text-[#E7E1D4] hover:bg-[#17233A]',
+                      ].join(' ')
+                    }
+                  >
+                    {item.label}
+                  </NavLink>
+                ))}
               </div>
-            )}
+            </div>
           </div>
         </div>
       )}
 
-      {/* LINHA DOURADA FINAL */}
       <div className="h-[2px] w-full bg-gradient-to-r from-transparent via-[#C2A14D] to-transparent" />
     </header>
   )
