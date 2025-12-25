@@ -16,20 +16,19 @@ export default function Budgets() {
   const [categories, setCategories] = useState<Category[]>([])
   const [rows, setRows] = useState<BudgetRow[]>([])
   const [categoryId, setCategoryId] = useState<number | null>(null)
+
   const now = useMemo(() => new Date(), [])
   const [month, setMonth] = useState<number>(now.getMonth() + 1)
   const [year, setYear] = useState<number>(now.getFullYear())
   const [limit, setLimit] = useState<number>(0)
+
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const loadSeq = useRef(0)
 
   const monthOptions = useMemo(() => Array.from({ length: 12 }, (_, i) => i + 1), [])
   const yearOptions = useMemo(() => [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1], [now])
-  const fmt = useMemo(
-    () => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }),
-    []
-  )
+  const fmt = useMemo(() => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }), [])
 
   const selectedCategoryName = useMemo(() => {
     if (!categoryId) return null
@@ -37,28 +36,33 @@ export default function Budgets() {
   }, [categories, categoryId])
 
   const totals = useMemo(() => {
-    const limitTotal = rows.reduce((acc, r) => acc + (Number(r.limit_amount ?? 0) > 0 ? Number(r.limit_amount ?? 0) : 0), 0)
+    const limitTotal = rows.reduce((acc, r) => acc + Math.max(0, Number(r.limit_amount ?? 0)), 0)
     const spentTotal = rows.reduce((acc, r) => acc + Number(r.spent_amount ?? 0), 0)
     const remainingTotal = limitTotal - spentTotal
+
     const warningCount = rows.filter((r) => {
       const lim = Number(r.limit_amount ?? 0)
       const spent = Number(r.spent_amount ?? 0)
       return lim > 0 && spent >= lim * 0.8 && spent < lim
     }).length
+
     const criticalCount = rows.filter((r) => {
       const lim = Number(r.limit_amount ?? 0)
       const spent = Number(r.spent_amount ?? 0)
       return lim > 0 && spent >= lim
     }).length
+
     const noBudgetCount = Math.max(0, categories.length - rows.length)
     const usagePct = limitTotal > 0 ? spentTotal / limitTotal : null
+
     return { limitTotal, spentTotal, remainingTotal, warningCount, criticalCount, noBudgetCount, usagePct }
-  }, [categories.length, rows])
+  }, [rows, categories.length])
 
   const load = useCallback(async () => {
     const seq = ++loadSeq.current
     setError(null)
     setLoading(true)
+
     try {
       const uid = await getUserId()
       if (!uid) return
@@ -67,7 +71,7 @@ export default function Budgets() {
       const { data: cats, error: catsError } = await supabase.from('categories').select('id,name').order('name')
       if (catsError) throw catsError
       if (seq !== loadSeq.current) return
-      setCategories(cats || [])
+      setCategories((cats || []) as Category[])
 
       const { data: budgets, error: budgetsError } = await supabase
         .from('budgets')
@@ -80,6 +84,7 @@ export default function Budgets() {
 
       const startISO = new Date(Date.UTC(year, month - 1, 1)).toISOString()
       const endISO = new Date(Date.UTC(year, month, 1)).toISOString()
+
       const { data: tx, error: txError } = await supabase
         .from('transactions')
         .select('amount,category_id,occurred_at,kind')
@@ -147,9 +152,14 @@ export default function Budgets() {
       setError('Informe um limite maior que zero.')
       return
     }
+
     const { error } = await supabase
       .from('budgets')
-      .upsert({ user_id: uid, category_id: categoryId, month, year, limit_amount: limit }, { onConflict: 'user_id,category_id,month,year' })
+      .upsert(
+        { user_id: uid, category_id: categoryId, month, year, limit_amount: limit },
+        { onConflict: 'user_id,category_id,month,year' }
+      )
+
     if (error) setError(error.message)
     setLimit(0)
     setCategoryId(null)
@@ -171,181 +181,292 @@ export default function Budgets() {
     return [...rows].sort((a, b) => Number(b.spent_amount ?? 0) - Number(a.spent_amount ?? 0))
   }, [rows])
 
+  const monthLabel = `${String(month).padStart(2, '0')}/${year}`
+
   return (
-    <div className="space-y-6">
-      <div className="bg-white border rounded p-4">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
-            <div className="font-semibold">Orçamentos</div>
-            <div className="text-xs text-slate-500">Visão do mês, limites e consumo por categoria.</div>
-          </div>
-          <div className="flex gap-2">
-            <select
-              className="border rounded px-3 py-2"
-              value={month}
-              onChange={(e) => setMonth(Number(e.target.value))}
-              disabled={loading}
-            >
-              {monthOptions.map((m) => (
-                <option key={m} value={m}>
-                  {String(m).padStart(2, '0')}
-                </option>
-              ))}
-            </select>
-            <select
-              className="border rounded px-3 py-2"
-              value={year}
-              onChange={(e) => setYear(Number(e.target.value))}
-              disabled={loading}
-            >
-              {yearOptions.map((y) => (
-                <option key={y} value={y}>
-                  {y}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
+    <div className="w-full space-y-6">
+        <div className="rounded-2xl border border-[#D6D3C8] bg-[#FBFAF7] shadow-[0_10px_40px_rgba(11,19,36,0.10)]">
+          <div className="px-5 py-5 sm:px-6 lg:px-8 flex flex-col gap-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="h-10 w-10 rounded-xl border border-[#D6D3C8] bg-white shadow-[0_6px_18px_rgba(11,19,36,0.08)] flex items-center justify-center">
+                  <span className="h-2 w-2 rounded-full bg-[#C2A14D]" />
+                </div>
 
-        <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-3">
-          <div className="border rounded p-3">
-            <div className="text-xs text-slate-500">Limite total</div>
-            <div className="font-semibold">{fmt.format(totals.limitTotal)}</div>
-          </div>
-          <div className="border rounded p-3">
-            <div className="text-xs text-slate-500">Gasto total</div>
-            <div className="font-semibold">{fmt.format(totals.spentTotal)}</div>
-          </div>
-          <div className="border rounded p-3">
-            <div className="text-xs text-slate-500">Restante</div>
-            <div className={`font-semibold ${totals.remainingTotal < 0 ? 'text-red-700' : ''}`}>
-              {fmt.format(totals.remainingTotal)}
+                <div className="min-w-0">
+                  <div className="font-[ui-serif,Georgia,serif] text-2xl tracking-[-0.6px] text-[#111827]">
+                    Orçamentos
+                  </div>
+                  <div className="mt-1 text-xs text-[#6B7280]">
+                    Defina limites e acompanhe o consumo por categoria ao longo do mês.
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <select
+                  className="rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm shadow-[0_10px_30px_rgba(11,19,36,0.10)]"
+                  value={month}
+                  onChange={(e) => setMonth(Number(e.target.value))}
+                  disabled={loading}
+                >
+                  {monthOptions.map((m) => (
+                    <option key={m} value={m}>
+                      {String(m).padStart(2, '0')}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className="rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm shadow-[0_10px_30px_rgba(11,19,36,0.10)]"
+                  value={year}
+                  onChange={(e) => setYear(Number(e.target.value))}
+                  disabled={loading}
+                >
+                  {yearOptions.map((y) => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
-          </div>
-          <div className="border rounded p-3">
-            <div className="text-xs text-slate-500">Em alerta (≥ 80%)</div>
-            <div className="font-semibold">{totals.warningCount}</div>
-          </div>
-          <div className="border rounded p-3">
-            <div className="text-xs text-slate-500">Estourados (≥ 100%)</div>
-            <div className="font-semibold">{totals.criticalCount}</div>
-          </div>
-        </div>
 
-        <div className="mt-3 text-xs text-slate-500">
-          {totals.usagePct === null ? 'Defina limites para acompanhar o consumo do orçamento.' : `Uso total: ${Math.round(totals.usagePct * 100)}%`}
-          {totals.noBudgetCount > 0 ? ` • Categorias sem orçamento: ${totals.noBudgetCount}` : null}
-        </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs rounded-full border border-[#E4E1D6] bg-[#F5F2EB] px-3 py-1 text-[#374151]">
+                Mês: {monthLabel}
+              </span>
 
-        {error ? <div className="text-red-600 text-sm mt-3">{error}</div> : null}
-      </div>
+              <span className="text-xs rounded-full border border-[#E4E1D6] bg-white px-3 py-1 text-[#374151]">
+                Categorias sem orçamento: {totals.noBudgetCount}
+              </span>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white border rounded p-4">
-          <div className="font-semibold mb-2">Definir orçamento</div>
-          {selectedCategoryName ? <div className="text-xs text-slate-500 mb-3">Editando: {selectedCategoryName}</div> : null}
-          <form onSubmit={saveBudget} className="space-y-3">
-            <select
-              className="border rounded px-3 py-2 w-full"
-              value={categoryId ?? ''}
-              onChange={(e) => setCategoryId(Number(e.target.value))}
-              disabled={loading}
-            >
-              <option value="" disabled>
-                Categoria
-              </option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-            <input
-              className="border rounded px-3 py-2 w-full"
-              type="number"
-              step="0.01"
-              placeholder="Limite (R$)"
-              value={limit}
-              onChange={(e) => setLimit(Number(e.target.value))}
-              disabled={loading}
-            />
-            <div className="flex gap-2">
-              <button className="bg-slate-900 text-white rounded px-4 py-2 disabled:opacity-60" disabled={loading}>
-                {loading ? 'Salvando...' : 'Salvar'}
-              </button>
-              <button
-                type="button"
-                className="border rounded px-4 py-2 disabled:opacity-60"
-                onClick={removeBudget}
-                disabled={loading || !categoryId}
-              >
-                Remover
-              </button>
+              <span className="text-xs rounded-full border border-[#E4E1D6] bg-white px-3 py-1 text-[#374151]">
+                Uso total: {totals.usagePct === null ? '—' : `${Math.round(totals.usagePct * 100)}%`}
+              </span>
+
+              {totals.criticalCount > 0 ? (
+                <span className="text-xs rounded-full border border-red-200 bg-red-50 px-3 py-1 text-red-800">
+                  Estourados: {totals.criticalCount}
+                </span>
+              ) : null}
+
+              {totals.warningCount > 0 ? (
+                <span className="text-xs rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-amber-800">
+                  Em alerta: {totals.warningCount}
+                </span>
+              ) : null}
             </div>
-          </form>
+
+            {error ? (
+              <div className="rounded-xl border border-[#FECACA] bg-[#FEF2F2] px-4 py-3 text-sm text-[#991B1B]">
+                {error}
+              </div>
+            ) : null}
+          </div>
         </div>
 
-        <div className="bg-white border rounded p-4">
-          <div className="font-semibold mb-2">Orçamentos por categoria</div>
-          {loading ? (
-            <div>Carregando...</div>
-          ) : rowsSorted.length === 0 ? (
-            <div className="text-sm text-slate-600">Nenhum orçamento definido para este mês. Defina um limite ao lado.</div>
-          ) : (
-            <ul className="space-y-3">
-              {rowsSorted.map((r) => {
-                const lim = Number(r.limit_amount ?? 0)
-                const spent = Number(r.spent_amount ?? 0)
-                const pct = lim > 0 ? spent / lim : null
-                const pctLabel = pct === null ? 'sem limite' : `${Math.round(pct * 100)}%`
-                const barPct = pct === null ? 0 : Math.min(1, pct)
-                const barColor = pct === null ? '#CBD5E1' : pct >= 1 ? '#B91C1C' : pct >= 0.8 ? '#D97706' : '#16A34A'
-                const pill =
-                  pct === null
-                    ? 'bg-slate-100 text-slate-700'
-                    : pct >= 1
-                      ? 'bg-red-100 text-red-700'
-                      : pct >= 0.8
-                        ? 'bg-yellow-100 text-yellow-700'
-                        : 'bg-emerald-100 text-emerald-700'
-                const remaining = lim > 0 ? lim - spent : null
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <WideKpi title="Limite total" value={fmt.format(totals.limitTotal)} subtitle="Somatório dos limites do mês" />
+          <WideKpi title="Gasto" value={fmt.format(totals.spentTotal)} subtitle="Somatório das despesas do mês" />
+          <WideKpi
+            title="Restante"
+            value={fmt.format(totals.remainingTotal)}
+            subtitle="Limite total − gasto"
+            tone={totals.remainingTotal < 0 ? 'bad' : 'neutral'}
+          />
+          <WideKpi title="Em alerta" value={String(totals.warningCount)} subtitle="Categorias ≥ 80%" tone="warn" />
+          <WideKpi title="Estourados" value={String(totals.criticalCount)} subtitle="Categorias ≥ 100%" tone="bad" />
+        </div>
 
-                return (
-                  <li
-                    key={`${r.category_id}-${r.month}-${r.year}`}
-                    className="border rounded p-3 hover:bg-slate-50 cursor-pointer"
-                    onClick={() => {
-                      setCategoryId(r.category_id)
-                      setLimit(lim)
-                    }}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="text-sm font-medium truncate">{r.category_name}</div>
-                        <div className="text-xs text-slate-500">
-                          {fmt.format(spent)}
-                          {lim > 0 ? ` / ${fmt.format(lim)}` : ''}
-                        </div>
-                        {remaining !== null ? (
-                          <div className={`text-xs mt-1 ${remaining < 0 ? 'text-red-700' : 'text-slate-600'}`}>
-                            Restante: {fmt.format(remaining)}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <section className="rounded-xl border border-[#D6D3C8] bg-[#FBFAF7] p-5 shadow-[0_6px_18px_rgba(11,19,36,0.08)]">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="font-semibold text-[#111827]">Definir orçamento</div>
+                <div className="mt-1 text-xs text-[#6B7280]">
+                  {selectedCategoryName ? `Editando: ${selectedCategoryName}` : 'Escolha a categoria e defina o limite.'}
+                </div>
+              </div>
+              <span className="text-xs text-[#6B7280] rounded-full border border-[#D6D3C8] bg-white px-2 py-1">
+                Cadastro
+              </span>
+            </div>
+
+            <div className="mt-3 h-[2px] w-16 rounded-full bg-[#C2A14D]" />
+
+            <form onSubmit={saveBudget} className="mt-4 space-y-3">
+              <div>
+                <label className="block text-xs text-[#6B7280] mb-1">Categoria</label>
+                <select
+                  className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
+                  value={categoryId ?? ''}
+                  onChange={(e) => setCategoryId(Number(e.target.value))}
+                  disabled={loading}
+                >
+                  <option value="" disabled>
+                    Selecione…
+                  </option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs text-[#6B7280] mb-1">Limite</label>
+                <input
+                  className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
+                  type="number"
+                  step="0.01"
+                  placeholder="Ex.: 600"
+                  value={limit}
+                  onChange={(e) => setLimit(Number(e.target.value))}
+                  disabled={loading}
+                />
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <button
+                  className="rounded-xl bg-[#111827] text-white px-4 py-2 text-sm shadow-[0_14px_40px_rgba(11,19,36,0.18)] disabled:opacity-60"
+                  disabled={loading}
+                >
+                  {loading ? 'Salvando…' : 'Salvar'}
+                </button>
+
+                <button
+                  type="button"
+                  className="rounded-xl border border-[#D6D3C8] bg-white px-4 py-2 text-sm disabled:opacity-60 hover:bg-[#F5F2EB]"
+                  onClick={removeBudget}
+                  disabled={loading || !categoryId}
+                >
+                  Remover
+                </button>
+              </div>
+
+              <div className="mt-4 rounded-xl border border-[#E4E1D6] bg-white p-3">
+                <div className="text-xs text-[#6B7280]">Dica</div>
+                <div className="mt-1 text-sm text-[#111827]">
+                  Comece pelas categorias maiores e ajuste semanalmente para manter o ciclo sob controle.
+                </div>
+              </div>
+            </form>
+          </section>
+
+          <section className="rounded-xl border border-[#D6D3C8] bg-[#FBFAF7] p-5 shadow-[0_6px_18px_rgba(11,19,36,0.08)] lg:col-span-2">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="font-semibold text-[#111827]">Orçamentos por categoria</div>
+                <div className="mt-1 text-xs text-[#6B7280]">Toque em um item para editar rapidamente.</div>
+              </div>
+              <span className="text-xs text-[#6B7280] rounded-full border border-[#D6D3C8] bg-white px-2 py-1">
+                {rowsSorted.length} item(ns)
+              </span>
+            </div>
+
+            <div className="mt-3 h-[2px] w-16 rounded-full bg-[#C2A14D]" />
+
+            {loading ? (
+              <div className="mt-4 text-sm text-[#6B7280]">Carregando…</div>
+            ) : rowsSorted.length === 0 ? (
+              <div className="mt-4 text-sm text-[#6B7280]">Nenhum orçamento definido para este mês.</div>
+            ) : (
+              <ul className="mt-4 space-y-3">
+                {rowsSorted.map((r) => {
+                  const lim = Number(r.limit_amount ?? 0)
+                  const spent = Number(r.spent_amount ?? 0)
+                  const pct = lim > 0 ? spent / lim : null
+
+                  const barPct = pct === null ? 0 : Math.min(1, pct)
+                  const barColor = pct === null ? '#CBD5E1' : pct >= 1 ? '#B91C1C' : pct >= 0.8 ? '#D97706' : '#16A34A'
+
+                  const pill =
+                    pct === null
+                      ? 'bg-[#F5F2EB] text-[#374151] border-[#E4E1D6]'
+                      : pct >= 1
+                        ? 'bg-red-50 text-red-700 border-red-200'
+                        : pct >= 0.8
+                          ? 'bg-amber-50 text-amber-800 border-amber-200'
+                          : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+
+                  const remaining = lim > 0 ? lim - spent : null
+
+                  return (
+                    <li
+                      key={`${r.category_id}-${r.month}-${r.year}`}
+                      className="rounded-xl border border-[#E4E1D6] bg-white p-4 hover:bg-[#FBFAF7] cursor-pointer"
+                      onClick={() => {
+                        setCategoryId(r.category_id)
+                        setLimit(lim)
+                      }}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium text-[#111827] truncate">{r.category_name}</div>
+                          <div className="text-xs text-[#6B7280]">
+                            {fmt.format(spent)}
+                            {lim > 0 ? ` / ${fmt.format(lim)}` : ''}
                           </div>
-                        ) : null}
-                      </div>
-                      <span className={`text-xs px-2 py-0.5 rounded ${pill}`}>{pctLabel}</span>
-                    </div>
 
-                    <div className="mt-2 h-2 w-full rounded bg-slate-100 overflow-hidden">
-                      <div className="h-full" style={{ width: `${barPct * 100}%`, background: barColor }} />
-                    </div>
-                  </li>
-                )
-              })}
-            </ul>
-          )}
+                          {remaining !== null ? (
+                            <div className={`text-xs mt-1 ${remaining < 0 ? 'text-red-700' : 'text-[#6B7280]'}`}>
+                              Restante: {fmt.format(remaining)}
+                            </div>
+                          ) : null}
+                        </div>
+
+                        <span className={`text-xs rounded-full px-2 py-0.5 border ${pill}`}>
+                          {pct === null ? 'sem limite' : `${Math.round(pct * 100)}%`}
+                        </span>
+                      </div>
+
+                      <div className="mt-3 h-2 w-full rounded-full bg-[#E7E1D4] overflow-hidden">
+                        <div className="h-full" style={{ width: `${barPct * 100}%`, background: barColor }} />
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </section>
         </div>
-      </div>
     </div>
   )
 }
 
+function WideKpi({
+  title,
+  value,
+  subtitle,
+  tone = 'neutral',
+}: {
+  title: string
+  value: string
+  subtitle: string
+  tone?: 'neutral' | 'ok' | 'warn' | 'bad'
+}) {
+  const valueCls =
+    tone === 'ok'
+      ? 'text-[#2E7D32]'
+      : tone === 'warn'
+        ? 'text-[#D97706]'
+        : tone === 'bad'
+          ? 'text-[#B91C1C]'
+          : 'text-[#111827]'
+
+  return (
+    <div className="rounded-xl border border-[#D6D3C8] bg-[#FBFAF7] p-4 shadow-[0_6px_18px_rgba(11,19,36,0.08)]">
+      <div className="flex items-center justify-between">
+        <div className="text-sm text-[#6B7280]">{title}</div>
+        <span className="h-2 w-2 rounded-full bg-[#C2A14D]" />
+      </div>
+
+      <div className={`mt-2 text-2xl font-semibold tracking-[-0.6px] ${valueCls}`}>{value}</div>
+      <div className="mt-1 text-xs text-[#6B7280]">{subtitle}</div>
+
+      <div className="mt-4 h-px bg-[#D6D3C8]" />
+      <div className="mt-3 text-xs text-[#6B7280]">Ciclo mensal</div>
+    </div>
+  )
+}
