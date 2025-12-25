@@ -4,15 +4,18 @@ import { getUserId } from '../lib/auth'
 
 type UserSettings = { user_id: string; pay_percent: number; emergency_months: number }
 type Reserve = { user_id: string; target_months: number; target_amount: number | null; current_amount: number }
+type MonthlyExpense = { month: number; year: number; expenses_amount: number }
 
 export default function Settings() {
   const [settings, setSettings] = useState<UserSettings | null>(null)
   const [reserve, setReserve] = useState<Reserve | null>(null)
+  const [expenseHistory, setExpenseHistory] = useState<MonthlyExpense[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [exampleIncome, setExampleIncome] = useState<number>(5000)
+  const [monthlyAporte, setMonthlyAporte] = useState<number>(500)
   const loadSeq = useRef(0)
 
   const fmt = useMemo(() => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }), [])
@@ -27,12 +30,20 @@ export default function Settings() {
       if (!uid) return
       if (seq !== loadSeq.current) return
 
-      const [{ data: s, error: sErr }, { data: r, error: rErr }] = await Promise.all([
+      const [{ data: s, error: sErr }, { data: r, error: rErr }, { data: h, error: hErr }] = await Promise.all([
         supabase.from('user_settings').select('user_id,pay_percent,emergency_months').eq('user_id', uid).maybeSingle(),
         supabase.from('emergency_reserve').select('user_id,target_months,target_amount,current_amount').eq('user_id', uid).maybeSingle(),
+        supabase
+          .from('vw_monthly_summary')
+          .select('month,year,expenses_amount')
+          .eq('user_id', uid)
+          .order('year', { ascending: false })
+          .order('month', { ascending: false })
+          .limit(6),
       ])
       if (sErr) throw sErr
       if (rErr) throw rErr
+      if (hErr) throw hErr
       if (seq !== loadSeq.current) return
 
       setSettings(
@@ -54,6 +65,14 @@ export default function Settings() {
               current_amount: Number((r as any).current_amount ?? 0),
             }
           : { user_id: uid, target_months: 6, target_amount: null, current_amount: 0 }
+      )
+
+      setExpenseHistory(
+        (h || []).map((row: any) => ({
+          month: Number(row?.month ?? 0),
+          year: Number(row?.year ?? 0),
+          expenses_amount: Number(row?.expenses_amount ?? 0),
+        }))
       )
     } catch (e: any) {
       if (seq !== loadSeq.current) return
@@ -94,12 +113,6 @@ export default function Settings() {
       return
     }
 
-    const em = Number(settings.emergency_months ?? 0)
-    if (!Number.isFinite(em) || em < 1 || em > 36) {
-      setError('Informe a reserva mínima (1 a 36 meses).')
-      return
-    }
-
     const tm = Number(reserve.target_months ?? 0)
     if (!Number.isFinite(tm) || tm < 1 || tm > 36) {
       setError('Informe a meta de meses (1 a 36).')
@@ -116,6 +129,7 @@ export default function Settings() {
     try {
       const uid = await getUserId()
       if (!uid) return
+      const em = Math.max(1, Math.min(36, Number(settings.emergency_months ?? 6)))
 
       const { error: sErr } = await supabase.from('user_settings').upsert(
         { user_id: uid, pay_percent: pp, emergency_months: em },
@@ -139,12 +153,57 @@ export default function Settings() {
   }
 
   const payPercent = Math.max(0, Math.min(0.95, Number(settings?.pay_percent ?? 0.1)))
-  const emergencyMonths = Math.max(1, Math.min(36, Number(settings?.emergency_months ?? 6)))
   const reserveCurrent = Math.max(0, Number(reserve?.current_amount ?? 0))
   const reserveTarget =
     reserve?.target_amount === null || reserve?.target_amount === undefined ? null : Math.max(0, Number(reserve.target_amount))
   const reservePct = reserveTarget && reserveTarget > 0 ? Math.min(1, reserveCurrent / reserveTarget) : null
   const reserveMissing = reserveTarget && reserveTarget > 0 ? Math.max(0, reserveTarget - reserveCurrent) : null
+
+  const expensesBase = useMemo(() => {
+    return expenseHistory
+      .map((r) => Math.max(0, Number((r as any).expenses_amount ?? 0)))
+      .filter((v) => Number.isFinite(v) && v > 0)
+      .slice(0, 3)
+  }, [expenseHistory])
+
+  const avgExpense = useMemo(() => {
+    if (!expensesBase.length) return null
+    return expensesBase.reduce((acc, v) => acc + v, 0) / expensesBase.length
+  }, [expensesBase])
+
+  const suggestedTarget = useMemo(() => {
+    const baseMonths = 6
+    if (!avgExpense || avgExpense <= 0) return null
+    return avgExpense * baseMonths
+  }, [avgExpense])
+
+  const effectiveTarget = reserveTarget ?? suggestedTarget
+  const effectiveTargetLabel = reserveTarget ? 'meta configurada' : suggestedTarget ? 'meta sugerida (6m)' : null
+
+  const aporteTime = useMemo(() => {
+    const target = effectiveTarget
+    const aporte = Math.max(0, Number(monthlyAporte ?? 0))
+    if (!target || target <= reserveCurrent || aporte <= 0) return null
+    const missing = target - reserveCurrent
+    const months = Math.ceil(missing / aporte)
+    const years = Math.floor(months / 12)
+    const remainingMonths = months % 12
+    return { months, years, remainingMonths }
+  }, [effectiveTarget, monthlyAporte, reserveCurrent])
+
+  const aporteLabel = useMemo(() => {
+    if (!aporteTime) return null
+    if (aporteTime.years > 0 && aporteTime.remainingMonths > 0) return `${aporteTime.years}a ${aporteTime.remainingMonths}m`
+    if (aporteTime.years > 0) return `${aporteTime.years}a`
+    return `${aporteTime.months}m`
+  }, [aporteTime])
+
+  const aporteTone: 'neutral' | 'ok' | 'warn' = useMemo(() => {
+    if (!aporteTime) return 'neutral'
+    if (aporteTime.months <= 6) return 'ok'
+    if (aporteTime.months <= 12) return 'warn'
+    return 'neutral'
+  }, [aporteTime])
 
   const previewSavings = Math.max(0, Number(exampleIncome ?? 0)) * payPercent
   const previewAvailable = Math.max(0, Number(exampleIncome ?? 0)) - previewSavings
@@ -178,7 +237,7 @@ export default function Settings() {
 
               <div className="mt-4 flex flex-wrap items-center gap-2">
                 <Pill variant="gold">Pague-se primeiro: {(payPercent * 100).toFixed(1)}%</Pill>
-                <Pill variant="sky">Reserva mínima: {emergencyMonths} mês(es) de custo de vida</Pill>
+                <Pill variant="sky">Tempo p/ meta: {aporteLabel ?? '—'}</Pill>
                 <Pill>Saldo reserva: {fmt.format(reserveCurrent)}</Pill>
                 <Pill>Meta: {reserveTarget ? fmt.format(reserveTarget) : '—'}</Pill>
               </div>
@@ -209,7 +268,16 @@ export default function Settings() {
 
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <WideKpi title="Poupança padrão" value={`${(payPercent * 100).toFixed(1)}%`} subtitle="Aplicada na página de Renda" tone={payPercent >= 0.2 ? 'ok' : payPercent >= 0.1 ? 'neutral' : 'warn'} />
-        <WideKpi title="Reserva mínima" value={`${emergencyMonths}m`} subtitle="Meses de custo de vida cobertos" tone={emergencyMonths >= 6 ? 'ok' : emergencyMonths >= 3 ? 'warn' : 'bad'} />
+        <WideKpi
+          title="Tempo p/ meta"
+          value={aporteLabel ?? '—'}
+          subtitle={
+            effectiveTarget && effectiveTarget > reserveCurrent && monthlyAporte > 0
+              ? `Aporte: ${fmt.format(Math.max(0, monthlyAporte))}/m (${effectiveTargetLabel ?? 'meta'})`
+              : 'Defina uma meta e simule um aporte mensal'
+          }
+          tone={aporteTone === 'ok' ? 'ok' : aporteTone === 'warn' ? 'warn' : 'neutral'}
+        />
         <WideKpi title="Saldo da reserva" value={fmt.format(reserveCurrent)} subtitle="Patrimônio de proteção" tone={reserveCurrent > 0 ? 'ok' : 'neutral'} />
         <WideKpi title="Meta" value={reserveTarget ? fmt.format(reserveTarget) : '—'} subtitle={reserveTarget ? 'Valor alvo configurado' : 'Defina um alvo opcional'} tone={reserveTarget ? 'neutral' : 'warn'} />
         <WideKpi title="Progresso" value={reservePct === null ? '—' : `${Math.round(reservePct * 100)}%`} subtitle="Da meta de reserva" tone={reservePct === null ? 'neutral' : reservePct >= 0.8 ? 'ok' : reservePct >= 0.5 ? 'warn' : 'bad'} />
@@ -241,22 +309,6 @@ export default function Settings() {
                 disabled={saving || loading}
               />
               <div className="mt-2 text-[11px] text-[#6B7280]">Dica: 0.10 = 10%, 0.15 = 15%.</div>
-            </div>
-
-            <div>
-              <label className="block text-xs text-[#6B7280] mb-1">Reserva mínima (meses de custo de vida)</label>
-              <input
-                type="number"
-                min={1}
-                max={36}
-                step={1}
-                inputMode="numeric"
-                className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
-                value={settings?.emergency_months ?? 6}
-                onChange={(e) => setSettings((s) => (s ? { ...s, emergency_months: e.target.value === '' ? 0 : Number(e.target.value) } : s))}
-                disabled={saving || loading}
-              />
-              <div className="mt-2 text-[11px] text-[#6B7280]">Ex.: 6 = ter guardado o suficiente para 6 meses dos seus gastos essenciais.</div>
             </div>
 
             <div className="rounded-2xl border border-[#E4E1D6] bg-white p-4 shadow-[0_10px_30px_rgba(11,19,36,0.06)]">
@@ -307,18 +359,30 @@ export default function Settings() {
           <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-3">
               <div>
-                <label className="block text-xs text-[#6B7280] mb-1">Meses alvo</label>
+                <label className="block text-xs text-[#6B7280] mb-1">Aporte mensal (simulação)</label>
                 <input
                   type="number"
-                  min={1}
-                  max={36}
-                  step={1}
-                  inputMode="numeric"
+                  step="0.01"
+                  inputMode="decimal"
                   className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
-                  value={reserve?.target_months ?? 6}
-                  onChange={(e) => setReserve((r) => (r ? { ...r, target_months: e.target.value === '' ? 0 : Number(e.target.value) } : r))}
+                  value={monthlyAporte}
+                  onChange={(e) => setMonthlyAporte(e.target.value === '' ? 0 : Number(e.target.value))}
                   disabled={saving || loading}
                 />
+                {effectiveTarget && effectiveTarget > reserveCurrent && monthlyAporte > 0 ? (
+                  <div className="mt-2 text-[11px] text-[#6B7280]">
+                    Para alcançar {fmt.format(effectiveTarget)} ({effectiveTargetLabel ?? 'meta'}), faltam{' '}
+                    {fmt.format(Math.max(0, effectiveTarget - reserveCurrent))} · tempo estimado: {aporteLabel ?? '—'}.
+                  </div>
+                ) : (
+                  <div className="mt-2 text-[11px] text-[#6B7280]">
+                    {reserveTarget
+                      ? 'Informe um aporte para estimar o tempo até a meta.'
+                      : avgExpense
+                        ? `Sugestão de meta (6m): ${suggestedTarget ? fmt.format(suggestedTarget) : '—'}`
+                        : 'Defina um valor alvo ou registre despesas para gerar sugestão.'}
+                  </div>
+                )}
               </div>
 
               <div>
@@ -336,7 +400,21 @@ export default function Settings() {
                   }
                   disabled={saving || loading}
                 />
-                <div className="mt-2 text-[11px] text-[#6B7280]">Se não definir, o app mostra apenas o saldo atual.</div>
+                <div className="mt-2 flex items-center justify-between gap-2">
+                  <div className="text-[11px] text-[#6B7280]">
+                    {reserveTarget ? 'Defina um valor alvo para acompanhar progresso e simular aportes.' : 'Se não definir, o app usa uma sugestão automática quando disponível.'}
+                  </div>
+                  {suggestedTarget && (!reserve?.target_amount || Number(reserve.target_amount) !== suggestedTarget) ? (
+                    <button
+                      type="button"
+                      className="text-[11px] rounded-full border border-[#D6D3C8] bg-white px-2 py-1 text-[#111827] hover:bg-[#F5F2EB] disabled:opacity-60"
+                      onClick={() => setReserve((r) => (r ? { ...r, target_amount: suggestedTarget } : r))}
+                      disabled={saving || loading}
+                    >
+                      Usar sugestão
+                    </button>
+                  ) : null}
+                </div>
               </div>
             </div>
 
@@ -373,7 +451,6 @@ export default function Settings() {
               )}
 
               <div className="mt-4 h-px bg-[#E4E1D6]" />
-              <div className="mt-3 text-[11px] text-[#6B7280]">Meta em meses: {Math.max(1, Number(reserve?.target_months ?? 6))}</div>
             </div>
           </div>
         </section>
@@ -442,4 +519,3 @@ function WideKpi({
     </div>
   )
 }
-
