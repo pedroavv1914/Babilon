@@ -22,7 +22,7 @@ export default function Header({ session }: { session: any }) {
       { to: '/transactions', label: 'Transações' },
       { to: '/categories', label: 'Categorias' },
       { to: '/investments', label: 'Investimentos' },
-      { to: '/settings', label: 'Configurações' },
+      { to: '/settings', label: 'Planejamento' },
     ],
     []
   )
