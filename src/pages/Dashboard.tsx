@@ -113,6 +113,21 @@ export default function Dashboard() {
     []
   )
 
+  const spentPieData = useMemo(() => {
+    return usage
+      .map((u) => ({ name: u.category_name, value: Math.max(0, Number(u.spent_amount ?? 0)) }))
+      .filter((d) => Number.isFinite(d.value) && d.value > 0)
+  }, [usage])
+
+  const limitPieData = useMemo(() => {
+    return usage
+      .map((u) => ({ name: u.category_name, value: Math.max(0, Number(u.limit_amount ?? 0)) }))
+      .filter((d) => Number.isFinite(d.value) && d.value > 0)
+  }, [usage])
+
+  const spentPieTotal = useMemo(() => spentPieData.reduce((acc, d) => acc + d.value, 0), [spentPieData])
+  const limitPieTotal = useMemo(() => limitPieData.reduce((acc, d) => acc + d.value, 0), [limitPieData])
+
   const tipsKeys = useMemo(() => {
     if (!alerts.length) return []
     return [...new Set(alerts.map((a) => (a.severity === 'critical' ? 'budget_critical' : 'budget_warning')))]
@@ -399,16 +414,11 @@ export default function Dashboard() {
         >
           {usage.length === 0 ? (
             <div className="text-sm text-[#6B7280]">Sem dados ainda. Registre transações e defina limites para visualizar o gráfico.</div>
-          ) : (
+          ) : spentPieTotal > 0 ? (
             <ResponsiveContainer width="100%" height={380}>
               <PieChart>
-                <Pie
-                  data={usage.map((u) => ({ name: u.category_name, value: Number(u.spent_amount ?? 0) }))}
-                  dataKey="value"
-                  nameKey="name"
-                  outerRadius={150}
-                >
-                  {usage.map((_, i) => (
+                <Pie data={spentPieData} dataKey="value" nameKey="name" outerRadius={150}>
+                  {spentPieData.map((_, i) => (
                     <Cell key={i} fill={chartColors[i % chartColors.length]} />
                   ))}
                 </Pie>
@@ -423,6 +433,30 @@ export default function Dashboard() {
                 />
               </PieChart>
             </ResponsiveContainer>
+          ) : limitPieTotal > 0 ? (
+            <div>
+              <div className="mb-3 text-xs text-[#6B7280]">Sem gastos registrados no mês. Exibindo distribuição dos limites definidos.</div>
+              <ResponsiveContainer width="100%" height={380}>
+                <PieChart>
+                  <Pie data={limitPieData} dataKey="value" nameKey="name" outerRadius={150}>
+                    {limitPieData.map((_, i) => (
+                      <Cell key={i} fill={chartColors[i % chartColors.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    formatter={(v: any) => fmt(Number(v ?? 0))}
+                    contentStyle={{
+                      borderRadius: 14,
+                      borderColor: '#D6D3C8',
+                      backgroundColor: '#FBFAF7',
+                      boxShadow: '0 10px 30px rgba(11,19,36,0.10)',
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="text-sm text-[#6B7280]">Sem valores para exibir. Defina limites e registre despesas para ver o gráfico.</div>
           )}
         </Card>
 
