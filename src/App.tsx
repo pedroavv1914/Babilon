@@ -3,6 +3,7 @@ import Login from './pages/Login'
 import Register from './pages/Register'
 import Dashboard from './pages/Dashboard'
 import Header from './components/Header'
+import Footer from './components/Footer'
 import Settings from './pages/Settings'
 import Categories from './pages/Categories'
 import Budgets from './pages/Budgets'
@@ -24,9 +25,9 @@ function App() {
   }, [])
 
   return (
-    <div className="min-h-screen bg-[#F5F2EB]">
+    <div className="min-h-screen bg-[#F5F2EB] flex flex-col">
       <Header session={session} />
-      <div className="w-full p-4">
+      <main className="w-full p-4 flex-1">
         <Routes>
           <Route path="/login" element={session ? <Navigate to="/" replace /> : <Login />} />
           <Route path="/register" element={session ? <Navigate to="/" replace /> : <Register />} />
@@ -38,7 +39,8 @@ function App() {
           <Route path="/transactions" element={session ? <Transactions /> : <Navigate to="/login" replace />} />
           <Route path="/investments" element={session ? <Investments /> : <Navigate to="/login" replace />} />
         </Routes>
-      </div>
+      </main>
+      <Footer />
     </div>
   )
 }
