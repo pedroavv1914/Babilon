@@ -55,7 +55,7 @@ export default function Login() {
   }
 
   return (
-    <div className="h-[calc(90vh-140px)] w-full flex items-center justify-center px-4 py-6">
+    <div className="w-full flex justify-center px-4 py-6 lg:min-h-[calc(100vh-140px)] lg:items-center">
       <div className="w-full max-w-[1040px] grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Painel visual / manifesto */}
         <div className="relative overflow-hidden rounded-2xl border border-[#D6D3C8] bg-[#0B1220] shadow-[0_24px_80px_rgba(11,19,36,0.30)]">
@@ -108,6 +108,24 @@ export default function Login() {
             </div>
           </div>
         </div>
+
+        {/* <div className="lg:hidden">
+          <button
+            type="button"
+            className="w-full rounded-2xl border border-[#D6D3C8] bg-[#FBFAF7] px-5 py-4 text-left shadow-[0_10px_30px_rgba(11,19,36,0.08)]"
+            onClick={() => document.getElementById('cadastro')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-[#111827]">Novo por aqui?</div>
+                <div className="mt-1 text-xs text-[#6B7280]">Role para baixo e crie sua conta.</div>
+              </div>
+              <span className="h-9 w-9 shrink-0 rounded-xl border border-[#D6D3C8] bg-white flex items-center justify-center text-[#111827]">
+                ↓
+              </span>
+            </div>
+          </button>
+        </div> */}
 
         {/* Form */}
         <div className="rounded-2xl border border-[#D6D3C8] bg-[#FBFAF7] shadow-[0_18px_60px_rgba(11,19,36,0.12)]">
