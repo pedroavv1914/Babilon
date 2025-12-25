@@ -44,7 +44,6 @@ export default function Dashboard() {
           .eq('user_id', uid)
           .maybeSingle()
 
-        // IMPORTANTE: filtrar alertas por usuário (assumindo que sua tabela possui user_id)
         const { data: a } = await supabase
           .from('alerts')
           .select('id,message,severity')
@@ -70,7 +69,7 @@ export default function Dashboard() {
     load()
 
     const ch = supabase
-      .channel('usage')
+      .channel('dashboard')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => load())
       .subscribe()
 
@@ -85,7 +84,6 @@ export default function Dashboard() {
   const income = Number(summary?.income_amount ?? 0)
   const savings = Number(summary?.savings_amount ?? 0)
   const expenses = Number(summary?.expenses_amount ?? 0)
-
   const available = income - savings - expenses
   const savingsRate = income > 0 ? savings / income : 0
 
@@ -110,18 +108,8 @@ export default function Dashboard() {
   const monthOptions = Array.from({ length: 12 }, (_, i) => i + 1)
   const yearOptions = [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1]
 
-  // Paleta “Babilônia Moderna” (sem depender de tailwind.config)
   const chartColors = useMemo(
-    () => [
-      '#C2A14D', // ouro antigo
-      '#0EA5E9', // céu (destaque frio)
-      '#10B981', // verde (ok)
-      '#F59E0B', // atenção
-      '#EF4444', // crítico
-      '#6366F1', // indigo
-      '#14B8A6', // teal
-      '#E11D48', // rose
-    ],
+    () => ['#C2A14D', '#0EA5E9', '#10B981', '#F59E0B', '#EF4444', '#6366F1', '#14B8A6', '#E11D48'],
     []
   )
 
@@ -130,56 +118,62 @@ export default function Dashboard() {
     return [...new Set(alerts.map((a) => (a.severity === 'critical' ? 'budget_critical' : 'budget_warning')))]
   }, [alerts])
 
-  if (loading) {
-    return (
-      <div className="mt-8">
-        {/* AUMENTO DE LARGURA: container mais largo + padding responsivo */}
-        <div className="mx-auto w-full max-w-[1400px] px-4 sm:px-6 lg:px-8">
-          <div className="rounded-xl border border-[#D6D3C8] bg-[#FBFAF7] p-5 text-sm text-[#6B7280] shadow-[0_6px_18px_rgba(11,19,36,0.08)]">
-            Carregando…
-          </div>
-        </div>
-      </div>
-    )
+  // UI helpers (mesmo padrão de Rendas)
+  const Pill = ({
+    children,
+    variant = 'neutral',
+  }: {
+    children: React.ReactNode
+    variant?: 'neutral' | 'gold' | 'sky'
+  }) => {
+    const cls =
+      variant === 'gold'
+        ? 'border-[#C2A14D]/40 bg-[#F5F2EB] text-[#5A4A1A]'
+        : variant === 'sky'
+          ? 'border-[#0EA5E9]/30 bg-[#E6F6FE] text-[#0B5E86]'
+          : 'border-[#D6D3C8] bg-white text-[#6B7280]'
+    return <span className={`text-xs rounded-full border px-2 py-1 ${cls}`}>{children}</span>
   }
 
-  // Helpers de UI
   const Card = ({
     title,
+    subtitle,
     right,
     children,
     className = '',
   }: {
     title?: string
+    subtitle?: string
     right?: React.ReactNode
     children: React.ReactNode
     className?: string
   }) => (
-    <section
-      className={`rounded-xl border border-[#D6D3C8] bg-[#FBFAF7] shadow-[0_6px_18px_rgba(11,19,36,0.08)] ${className}`}
-    >
-      {(title || right) && (
-        <header className="flex items-start justify-between gap-3 px-5 pt-4 pb-3">
-          <div>
-            {title && (
-              <h3 className="font-[ui-serif,Georgia,serif] text-[18px] tracking-[-0.2px] text-[#111827]">
-                {title}
-              </h3>
-            )}
-            <div className="mt-2 h-[2px] w-16 rounded-full bg-[#C2A14D]" />
+    <section className={`rounded-2xl border border-[#D6D3C8] bg-[#FBFAF7] shadow-[0_10px_30px_rgba(11,19,36,0.10)] ${className}`}>
+      {(title || subtitle || right) && (
+        <header className="px-5 pt-5 pb-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              {title && (
+                <h3 className="font-[ui-serif,Georgia,serif] text-[18px] tracking-[-0.3px] text-[#111827]">
+                  {title}
+                </h3>
+              )}
+              {subtitle && <div className="mt-1 text-xs text-[#6B7280]">{subtitle}</div>}
+              <div className="mt-3 h-[2px] w-16 rounded-full bg-[#C2A14D]" />
+            </div>
+            {right}
           </div>
-          {right}
         </header>
       )}
       <div className="px-5 pb-5">{children}</div>
     </section>
   )
 
-  const KPI = ({
+  const Stat = ({
     label,
     value,
     hint,
-    tone,
+    tone = 'neutral',
   }: {
     label: string
     value: string
@@ -196,106 +190,120 @@ export default function Dashboard() {
             : 'text-[#111827]'
 
     return (
-      <div className="rounded-xl border border-[#D6D3C8] bg-[#FBFAF7] p-5 shadow-[0_6px_18px_rgba(11,19,36,0.08)]">
+      <div className="rounded-2xl border border-[#D6D3C8] bg-[#FBFAF7] p-5 shadow-[0_10px_30px_rgba(11,19,36,0.10)]">
         <div className="flex items-center justify-between">
-          <p className="text-sm text-[#6B7280]">{label}</p>
+          <div className="text-sm text-[#6B7280]">{label}</div>
           <span className="h-2 w-2 rounded-full bg-[#C2A14D]" />
         </div>
-        <p className={`mt-2 text-3xl font-semibold tracking-[-0.6px] ${toneCls}`}>{value}</p>
-        {hint && <p className="mt-2 text-xs text-[#6B7280]">{hint}</p>}
-        <div className="mt-4 h-px bg-[#D6D3C8]" />
-        <div className="mt-3 text-xs text-[#6B7280]">Registro do mês</div>
+        <div className={`mt-2 text-3xl font-semibold tracking-[-0.6px] ${toneCls}`}>{value}</div>
+        {hint && <div className="mt-2 text-xs text-[#6B7280]">{hint}</div>}
+        <div className="mt-4 h-px bg-[#E4E1D6]" />
+        <div className="mt-3 text-[11px] text-[#6B7280]">Ciclo mensal</div>
+      </div>
+    )
+  }
+
+  if (loading) {
+    return (
+      <div className="mt-8">
+        <div className="mx-auto w-full max-w-[1400px] px-4 sm:px-6 lg:px-8">
+          <div className="rounded-2xl border border-[#D6D3C8] bg-[#FBFAF7] p-5 text-sm text-[#6B7280] shadow-[0_10px_30px_rgba(11,19,36,0.10)]">
+            Carregando…
+          </div>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="bg-[#F5F2EB] min-h-[calc(100vh-1px)]">
-      {/* AUMENTO DE LARGURA:
-         - antes: max-w-6xl
-         - agora: max-w-[1400px] + padding lg:px-8
-      */}
+    <div className="w-full">
+      {/* CONTAINER LARGO (igual Rendas) */}
       <div className="mx-auto w-full max-w-[1400px] px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-        {/* Header */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="font-[ui-serif,Georgia,serif] text-2xl tracking-[-0.6px] text-[#111827]">Visão do mês</div>
-            <div className="mt-1 text-xs text-[#6B7280]">Disciplina, limites e progresso</div>
+        {/* HERO CARD */}
+        <div className="rounded-2xl border border-[#D6D3C8] bg-[#FBFAF7] shadow-[0_14px_40px_rgba(11,19,36,0.10)] overflow-hidden">
+          <div className="px-5 py-5 sm:px-6 lg:px-8">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-2xl border border-[#C2A14D]/45 bg-white shadow-[0_10px_30px_rgba(11,19,36,0.12)] flex items-center justify-center">
+                    <span className="h-2.5 w-2.5 rounded-full bg-[#C2A14D]" />
+                  </div>
+                  <div>
+                    <div className="font-[ui-serif,Georgia,serif] text-2xl tracking-[-0.6px] text-[#111827]">
+                      Visão Geral
+                    </div>
+                    <div className="mt-1 text-xs text-[#6B7280]">
+                      Disciplina, limites e progresso — o retrato do mês.
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  <Pill variant="sky">Mês: {String(month).padStart(2, '0')}/{year}</Pill>
+                  <Pill variant="gold">Poupança: {(savingsRate * 100).toFixed(1)}%</Pill>
+                  <Pill>Alertas: {alerts.length}</Pill>
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <select
+                  className="rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm shadow-[0_10px_30px_rgba(11,19,36,0.10)]"
+                  value={month}
+                  onChange={(e) => setMonth(Number(e.target.value))}
+                >
+                  {monthOptions.map((m) => (
+                    <option key={m} value={m}>
+                      {String(m).padStart(2, '0')}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  className="rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm shadow-[0_10px_30px_rgba(11,19,36,0.10)]"
+                  value={year}
+                  onChange={(e) => setYear(Number(e.target.value))}
+                >
+                  {yearOptions.map((y) => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
           </div>
 
-          <div className="flex gap-2">
-            <select
-              className="rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm shadow-[0_6px_18px_rgba(11,19,36,0.08)]"
-              value={month}
-              onChange={(e) => setMonth(Number(e.target.value))}
-            >
-              {monthOptions.map((m) => (
-                <option key={m} value={m}>
-                  {String(m).padStart(2, '0')}
-                </option>
-              ))}
-            </select>
-
-            <select
-              className="rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm shadow-[0_6px_18px_rgba(11,19,36,0.08)]"
-              value={year}
-              onChange={(e) => setYear(Number(e.target.value))}
-            >
-              {yearOptions.map((y) => (
-                <option key={y} value={y}>
-                  {y}
-                </option>
-              ))}
-            </select>
-          </div>
+          <div
+            className="h-[3px] w-full"
+            style={{ background: 'linear-gradient(90deg, rgba(194,161,77,0) 0%, rgba(194,161,77,0.9) 50%, rgba(194,161,77,0) 100%)' }}
+          />
         </div>
 
-        {/* KPIs
-            Ajuste de largura:
-            - antes: md:grid-cols-4
-            - agora: mantém 4 em md, mas em telas grandes ganha mais “respiro” e fica mais largo pelo container maior.
-        */}
+        {/* STATS */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <KPI label="Renda do mês" value={fmt(income)} hint="Base do seu ciclo" />
-          <KPI
-            label="Ouro guardado"
-            value={fmt(savings)}
-            hint={`Taxa: ${(savingsRate * 100).toFixed(1)}% • Não disponível para gastos`}
-            tone="ok"
-          />
-          <KPI label="Gasto real" value={fmt(expenses)} hint="Despesas do mês" />
-          <KPI
-            label="Disponível para gastar"
-            value={fmt(available)}
-            hint={available < 0 ? 'Atenção: mês no vermelho' : 'Dentro do planejado'}
-            tone={available < 0 ? 'bad' : 'neutral'}
-          />
+          <Stat label="Renda do mês" value={fmt(income)} hint="Entrada total do ciclo" />
+          <Stat label="Ouro guardado" value={fmt(savings)} hint={`Taxa: ${(savingsRate * 100).toFixed(1)}%`} tone="ok" />
+          <Stat label="Gastos" value={fmt(expenses)} hint="Saídas registradas" tone={expenses > income ? 'warn' : 'neutral'} />
+          <Stat label="Disponível" value={fmt(available)} hint={available < 0 ? 'Atenção: mês no vermelho' : 'Dentro do planejado'} tone={available < 0 ? 'bad' : 'neutral'} />
         </div>
 
-        {/* Linha: Orçamento (1) + Reserva (2)
-            Ajuste de largura:
-            - em xl, melhora a distribuição com col-span mais consistente
-        */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* GRID PRINCIPAL - MAIS LARGO */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
           <Card
-            title="Top categorias (atenção)"
-            right={
-              <span className="text-xs text-[#6B7280] rounded-full border border-[#D6D3C8] bg-white px-2 py-1">
-                Orçamento
-              </span>
-            }
+            title="Orçamento e categorias"
+            subtitle="Concentração de gastos no mês."
+            right={<Pill>Orçamento</Pill>}
+            className="lg:col-span-4"
           >
             {topUsage.length === 0 ? (
-              <div className="text-sm text-[#6B7280]">
-                Sem dados ainda. Registre transações para ver consumo por categoria.
-              </div>
+              <div className="text-sm text-[#6B7280]">Sem dados ainda. Registre transações para ver consumo por categoria.</div>
             ) : (
               <ul className="space-y-2">
                 {topUsage.slice(0, 5).map((u) => {
                   const pct = u.limit_amount > 0 ? u.spent_amount / u.limit_amount : null
                   const pill =
                     pct === null
-                      ? 'bg-[#F5F2EB] text-[#374151]'
+                      ? 'bg-[#F5F2EB] text-[#374151] border border-[#E4E1D6]'
                       : pct >= 1
                         ? 'bg-red-50 text-red-700 border border-red-200'
                         : pct >= 0.8
@@ -307,11 +315,10 @@ export default function Dashboard() {
                       <div className="min-w-0">
                         <div className="text-sm font-medium truncate text-[#111827]">{u.category_name}</div>
                         <div className="text-xs text-[#6B7280]">
-                          {fmt(u.spent_amount)}
-                          {u.limit_amount > 0 ? ` / ${fmt(u.limit_amount)}` : ''}
+                          {fmt(u.spent_amount)}{u.limit_amount > 0 ? ` / ${fmt(u.limit_amount)}` : ''}
                         </div>
                       </div>
-                      <span className={`text-xs px-2 py-0.5 rounded ${pill}`}>
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${pill}`}>
                         {pct === null ? 'sem limite' : `${Math.round(pct * 100)}%`}
                       </span>
                     </li>
@@ -320,10 +327,10 @@ export default function Dashboard() {
               </ul>
             )}
 
-            <div className="mt-5">
-              <div className="text-sm text-[#6B7280]">Uso total do orçamento</div>
-              <div className="text-lg font-semibold text-[#111827]">
-                {budgetLimitTotal > 0 ? `${(Math.min(1, budgetUsagePct) * 100).toFixed(0)}%` : '—'}
+            <div className="mt-5 rounded-2xl border border-[#E4E1D6] bg-white p-4 shadow-[0_10px_30px_rgba(11,19,36,0.06)]">
+              <div className="flex items-center justify-between">
+                <div className="text-xs text-[#6B7280]">Uso total do orçamento</div>
+                <Pill variant="gold">{budgetLimitTotal > 0 ? `${(Math.min(1, budgetUsagePct) * 100).toFixed(0)}%` : '—'}</Pill>
               </div>
 
               <div className="mt-2 h-2 w-full rounded-full bg-[#E7E1D4] overflow-hidden">
@@ -349,64 +356,60 @@ export default function Dashboard() {
 
           <Card
             title="Reserva de Emergência"
-            right={
-              <span className="text-xs text-[#6B7280] rounded-full border border-[#D6D3C8] bg-white px-2 py-1">
-                Proteção
-              </span>
-            }
-            className="lg:col-span-2"
+            subtitle="Progresso da proteção financeira."
+            right={<Pill variant="sky">Proteção</Pill>}
+            className="lg:col-span-8"
           >
-            <div className="text-sm flex items-center justify-between">
-              <span className="text-[#6B7280]">Saldo atual</span>
-              <span className="font-medium text-[#111827]">{fmt(reserveCurrent)}</span>
-            </div>
-
-            {reserveTarget ? (
-              <>
-                <div className="text-sm mt-2 flex items-center justify-between">
-                  <span className="text-[#6B7280]">Meta</span>
-                  <span className="font-medium text-[#111827]">{fmt(reserveTarget)}</span>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="rounded-2xl border border-[#E4E1D6] bg-white p-4 shadow-[0_10px_30px_rgba(11,19,36,0.06)]">
+                <div className="text-sm flex items-center justify-between">
+                  <span className="text-[#6B7280]">Saldo atual</span>
+                  <span className="font-medium text-[#111827]">{fmt(reserveCurrent)}</span>
                 </div>
 
-                <div className="mt-3 h-2 w-full rounded-full bg-[#E7E1D4] overflow-hidden">
-                  <div className="h-full bg-[#0EA5E9]" style={{ width: `${(reservePct ?? 0) * 100}%` }} />
-                </div>
+                {reserveTarget ? (
+                  <>
+                    <div className="text-sm mt-2 flex items-center justify-between">
+                      <span className="text-[#6B7280]">Meta</span>
+                      <span className="font-medium text-[#111827]">{fmt(reserveTarget)}</span>
+                    </div>
 
-                <div className="text-xs text-[#6B7280] mt-2">{Math.round((reservePct ?? 0) * 100)}% da meta</div>
-              </>
-            ) : (
-              <div className="text-xs text-[#6B7280] mt-2">
-                Defina o valor alvo em Configurações para acompanhar o progresso.
+                    <div className="mt-3 h-2 w-full rounded-full bg-[#E7E1D4] overflow-hidden">
+                      <div className="h-full bg-[#0EA5E9]" style={{ width: `${(reservePct ?? 0) * 100}%` }} />
+                    </div>
+
+                    <div className="mt-2 text-xs text-[#6B7280]">{Math.round((reservePct ?? 0) * 100)}% da meta</div>
+                  </>
+                ) : (
+                  <div className="text-xs text-[#6B7280] mt-2">Defina o valor alvo em Configurações para acompanhar o progresso.</div>
+                )}
               </div>
-            )}
 
-            <div className="mt-4 border-t border-[#D6D3C8] pt-3 text-sm text-[#374151] italic">
-              “O ouro reservado protege seu amanhã.”
+              <div className="rounded-2xl border border-[#E4E1D6] bg-white p-4 shadow-[0_10px_30px_rgba(11,19,36,0.06)]">
+                <div className="text-xs text-[#6B7280]">Princípio</div>
+                <div className="mt-2 font-[ui-serif,Georgia,serif] text-lg text-[#111827]">“O ouro reservado protege seu amanhã.”</div>
+                <div className="mt-2 text-sm text-[#6B7280]">Progresso constante vale mais do que impulso.</div>
+                <div className="mt-4 h-[2px] w-16 rounded-full bg-[#C2A14D]" />
+              </div>
             </div>
           </Card>
         </div>
 
-        {/* Gráfico (agora ocupa bem a largura) */}
         <Card
-          title="Orçamento por Categoria"
-          right={
-            <span className="text-xs text-[#6B7280] rounded-full border border-[#D6D3C8] bg-white px-2 py-1">
-              Visualização
-            </span>
-          }
+          title="Orçamento por categoria"
+          subtitle="Distribuição de gastos no mês."
+          right={<Pill>Visualização</Pill>}
         >
           {usage.length === 0 ? (
-            <div className="text-sm text-[#6B7280]">
-              Sem dados ainda. Registre transações e defina limites para visualizar o gráfico.
-            </div>
+            <div className="text-sm text-[#6B7280]">Sem dados ainda. Registre transações e defina limites para visualizar o gráfico.</div>
           ) : (
-            <ResponsiveContainer width="100%" height={360}>
+            <ResponsiveContainer width="100%" height={380}>
               <PieChart>
                 <Pie
                   data={usage.map((u) => ({ name: u.category_name, value: Number(u.spent_amount ?? 0) }))}
                   dataKey="value"
                   nameKey="name"
-                  outerRadius={140}
+                  outerRadius={150}
                 >
                   {usage.map((_, i) => (
                     <Cell key={i} fill={chartColors[i % chartColors.length]} />
@@ -415,10 +418,10 @@ export default function Dashboard() {
                 <Tooltip
                   formatter={(v: any) => fmt(Number(v ?? 0))}
                   contentStyle={{
-                    borderRadius: 12,
+                    borderRadius: 14,
                     borderColor: '#D6D3C8',
                     backgroundColor: '#FBFAF7',
-                    boxShadow: '0 10px 30px rgba(11,19,36,0.08)',
+                    boxShadow: '0 10px 30px rgba(11,19,36,0.10)',
                   }}
                 />
               </PieChart>
@@ -426,28 +429,23 @@ export default function Dashboard() {
           )}
         </Card>
 
-        {/* Alertas + Dicas (largura total) */}
         <Card
-          title="Alertas Recentes"
-          right={
-            <span className="text-xs text-[#6B7280] rounded-full border border-[#D6D3C8] bg-white px-2 py-1">
-              Atenção
-            </span>
-          }
+          title="Alertas recentes"
+          subtitle="Sinais do mês e recomendações."
+          right={<Pill variant="gold">Atenção</Pill>}
         >
           {alerts.length === 0 ? (
-            <div className="text-sm text-[#6B7280]">
-              Nenhum alerta por enquanto. Continue registrando e acompanhando seus limites.
-            </div>
+            <div className="text-sm text-[#6B7280]">Nenhum alerta por enquanto. Continue registrando e acompanhando seus limites.</div>
           ) : (
             <ul className="space-y-2">
               {alerts.map((a) => (
                 <li key={a.id} className="flex items-start gap-2">
                   <span
-                    className={`text-xs px-2 py-0.5 rounded border ${a.severity === 'critical'
+                    className={`text-xs px-2 py-0.5 rounded-full border ${
+                      a.severity === 'critical'
                         ? 'bg-red-50 text-red-700 border-red-200'
                         : 'bg-amber-50 text-amber-800 border-amber-200'
-                      }`}
+                    }`}
                   >
                     {a.severity}
                   </span>
@@ -457,7 +455,7 @@ export default function Dashboard() {
             </ul>
           )}
 
-          <div className="mt-4">
+          <div className="mt-5">
             <TipsPanel keys={tipsKeys} />
           </div>
         </Card>
