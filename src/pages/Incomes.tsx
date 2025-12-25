@@ -182,18 +182,41 @@ export default function Incomes() {
         return
       }
     }
-    const { error } = await supabase.from('incomes').insert({
-      user_id: uid,
-      amount,
-      month,
-      year,
-      rule_percent: percentMode === 'custom' ? Number(rulePercent) : null,
-      created_at: dt.toISOString(),
-    })
-    if (error) setError(error.message)
+    const usedPercent = percentMode === 'custom' ? Number(rulePercent) : defaultPercent
+    const savingsAmount = Math.max(0, Number(amount ?? 0)) * Math.max(0, Number(usedPercent ?? 0))
+
+    const { data: createdIncome, error: incErr } = await supabase
+      .from('incomes')
+      .insert({
+        user_id: uid,
+        amount,
+        month,
+        year,
+        rule_percent: percentMode === 'custom' ? Number(rulePercent) : null,
+        created_at: dt.toISOString(),
+      })
+      .select('id')
+      .single()
+    if (incErr) {
+      setError(incErr.message)
+      return
+    }
+
+    if (Number.isFinite(savingsAmount) && savingsAmount > 0) {
+      const { error: txErr } = await supabase
+        .from('transactions')
+        .insert({ user_id: uid, amount: savingsAmount, kind: 'aporte_reserva', occurred_at: dt.toISOString() })
+      if (txErr) {
+        await supabase.from('incomes').delete().match({ id: Number((createdIncome as any)?.id), user_id: uid })
+        setError(txErr.message)
+        return
+      }
+    }
+
     setAmount(0)
     setRulePercent('')
     setPercentMode('default')
+    await load()
   }
 
   async function deleteIncome(id: number) {
@@ -209,6 +232,18 @@ export default function Incomes() {
     setError(null)
     setDeletingId(deleteTarget.id)
     try {
+      const target = rows.find((r) => r.id === deleteTarget.id)
+      if (target) {
+        await supabase
+          .from('transactions')
+          .delete()
+          .match({
+            user_id: uid,
+            kind: 'aporte_reserva',
+            amount: Number(target.savings_amount ?? 0),
+            occurred_at: String(target.created_at ?? ''),
+          })
+      }
       const { error } = await supabase.from('incomes').delete().eq('id', deleteTarget.id).eq('user_id', uid)
       if (error) throw error
       await load()
