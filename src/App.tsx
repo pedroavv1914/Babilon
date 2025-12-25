@@ -14,18 +14,47 @@ import { useEffect, useState } from 'react'
 import { supabase } from './lib/supabaseClient'
 
 function App() {
-  const [session, setSession] = useState<any>(null)
+  const [session, setSession] = useState<any | null | undefined>(undefined)
+  const [authReady, setAuthReady] = useState(false)
   const location = useLocation()
   const hideHeader = location.pathname === '/login' || location.pathname === '/register'
   const mainClassName = hideHeader ? 'w-full flex-1' : 'w-full p-4 flex-1'
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session))
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => setSession(session))
+    let mounted = true
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return
+      setSession(data.session ?? null)
+      setAuthReady(true)
+    })
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return
+      setSession(session ?? null)
+      setAuthReady(true)
+    })
     return () => {
+      mounted = false
       listener.subscription.unsubscribe()
     }
   }, [])
+
+  if (!authReady) {
+    return (
+      <div className="min-h-screen bg-[#F5F2EB] flex flex-col">
+        {hideHeader ? null : <Header session={null} />}
+        <main className={mainClassName}>
+          <div className="mt-8">
+            <div className="rounded-2xl border border-[#D6D3C8] bg-[#FBFAF7] p-5 text-sm text-[#6B7280] shadow-[0_10px_30px_rgba(11,19,36,0.10)]">
+              Carregando…
+            </div>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-[#F5F2EB] flex flex-col">
