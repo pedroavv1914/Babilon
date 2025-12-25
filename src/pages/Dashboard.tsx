@@ -133,7 +133,8 @@ export default function Dashboard() {
   if (loading) {
     return (
       <div className="mt-8">
-        <div className="mx-auto max-w-6xl px-4">
+        {/* AUMENTO DE LARGURA: container mais largo + padding responsivo */}
+        <div className="mx-auto w-full max-w-[1400px] px-4 sm:px-6 lg:px-8">
           <div className="rounded-xl border border-[#D6D3C8] bg-[#FBFAF7] p-5 text-sm text-[#6B7280] shadow-[0_6px_18px_rgba(11,19,36,0.08)]">
             Carregando…
           </div>
@@ -186,7 +187,13 @@ export default function Dashboard() {
     tone?: 'neutral' | 'ok' | 'warn' | 'bad'
   }) => {
     const toneCls =
-      tone === 'ok' ? 'text-[#2E7D32]' : tone === 'warn' ? 'text-[#D97706]' : tone === 'bad' ? 'text-[#B91C1C]' : 'text-[#111827]'
+      tone === 'ok'
+        ? 'text-[#2E7D32]'
+        : tone === 'warn'
+          ? 'text-[#D97706]'
+          : tone === 'bad'
+            ? 'text-[#B91C1C]'
+            : 'text-[#111827]'
 
     return (
       <div className="rounded-xl border border-[#D6D3C8] bg-[#FBFAF7] p-5 shadow-[0_6px_18px_rgba(11,19,36,0.08)]">
@@ -203,8 +210,12 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="bg-[#F5F2EB]">
-      <div className="mx-auto max-w-6xl px-4 py-6 space-y-6">
+    <div className="bg-[#F5F2EB] min-h-[calc(100vh-1px)]">
+      {/* AUMENTO DE LARGURA:
+         - antes: max-w-6xl
+         - agora: max-w-[1400px] + padding lg:px-8
+      */}
+      <div className="mx-auto w-full max-w-[1400px] px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -239,19 +250,20 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* KPIs (semântica do livro) */}
+        {/* KPIs
+            Ajuste de largura:
+            - antes: md:grid-cols-4
+            - agora: mantém 4 em md, mas em telas grandes ganha mais “respiro” e fica mais largo pelo container maior.
+        */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <KPI label="Renda do mês" value={fmt(income)} hint="Base do seu ciclo" />
-
           <KPI
             label="Ouro guardado"
             value={fmt(savings)}
             hint={`Taxa: ${(savingsRate * 100).toFixed(1)}% • Não disponível para gastos`}
             tone="ok"
           />
-
-          <KPI label="Gasto real" value={fmt(expenses)} hint="Despesas do mês" tone={expenses > 0 ? 'neutral' : 'neutral'} />
-
+          <KPI label="Gasto real" value={fmt(expenses)} hint="Despesas do mês" />
           <KPI
             label="Disponível para gastar"
             value={fmt(available)}
@@ -260,10 +272,19 @@ export default function Dashboard() {
           />
         </div>
 
-        {/* Linha: Ação rápida (orçamento) + Pilar (reserva) */}
+        {/* Linha: Orçamento (1) + Reserva (2)
+            Ajuste de largura:
+            - em xl, melhora a distribuição com col-span mais consistente
+        */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Top categorias + uso total */}
-          <Card title="Top categorias (atenção)" right={<span className="text-xs text-[#6B7280] rounded-full border border-[#D6D3C8] bg-white px-2 py-1">Orçamento</span>}>
+          <Card
+            title="Top categorias (atenção)"
+            right={
+              <span className="text-xs text-[#6B7280] rounded-full border border-[#D6D3C8] bg-white px-2 py-1">
+                Orçamento
+              </span>
+            }
+          >
             {topUsage.length === 0 ? (
               <div className="text-sm text-[#6B7280]">
                 Sem dados ainda. Registre transações para ver consumo por categoria.
@@ -276,10 +297,10 @@ export default function Dashboard() {
                     pct === null
                       ? 'bg-[#F5F2EB] text-[#374151]'
                       : pct >= 1
-                        ? 'bg-red-100 text-red-700'
+                        ? 'bg-red-50 text-red-700 border border-red-200'
                         : pct >= 0.8
-                          ? 'bg-amber-100 text-amber-700'
-                          : 'bg-emerald-100 text-emerald-700'
+                          ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                          : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
 
                   return (
                     <li key={u.category_name} className="flex items-start justify-between gap-3">
@@ -326,10 +347,13 @@ export default function Dashboard() {
             </div>
           </Card>
 
-          {/* Reserva (pilar do livro) */}
           <Card
             title="Reserva de Emergência"
-            right={<span className="text-xs text-[#6B7280] rounded-full border border-[#D6D3C8] bg-white px-2 py-1">Proteção</span>}
+            right={
+              <span className="text-xs text-[#6B7280] rounded-full border border-[#D6D3C8] bg-white px-2 py-1">
+                Proteção
+              </span>
+            }
             className="lg:col-span-2"
           >
             <div className="text-sm flex items-center justify-between">
@@ -362,20 +386,27 @@ export default function Dashboard() {
           </Card>
         </div>
 
-        {/* Gráfico por categoria */}
-        <Card title="Orçamento por Categoria" right={<span className="text-xs text-[#6B7280] rounded-full border border-[#D6D3C8] bg-white px-2 py-1">Visualização</span>}>
+        {/* Gráfico (agora ocupa bem a largura) */}
+        <Card
+          title="Orçamento por Categoria"
+          right={
+            <span className="text-xs text-[#6B7280] rounded-full border border-[#D6D3C8] bg-white px-2 py-1">
+              Visualização
+            </span>
+          }
+        >
           {usage.length === 0 ? (
             <div className="text-sm text-[#6B7280]">
               Sem dados ainda. Registre transações e defina limites para visualizar o gráfico.
             </div>
           ) : (
-            <ResponsiveContainer width="100%" height={320}>
+            <ResponsiveContainer width="100%" height={360}>
               <PieChart>
                 <Pie
                   data={usage.map((u) => ({ name: u.category_name, value: Number(u.spent_amount ?? 0) }))}
                   dataKey="value"
                   nameKey="name"
-                  outerRadius={120}
+                  outerRadius={140}
                 >
                   {usage.map((_, i) => (
                     <Cell key={i} fill={chartColors[i % chartColors.length]} />
@@ -395,8 +426,15 @@ export default function Dashboard() {
           )}
         </Card>
 
-        {/* Alertas + Dicas */}
-        <Card title="Alertas Recentes" right={<span className="text-xs text-[#6B7280] rounded-full border border-[#D6D3C8] bg-white px-2 py-1">Atenção</span>}>
+        {/* Alertas + Dicas (largura total) */}
+        <Card
+          title="Alertas Recentes"
+          right={
+            <span className="text-xs text-[#6B7280] rounded-full border border-[#D6D3C8] bg-white px-2 py-1">
+              Atenção
+            </span>
+          }
+        >
           {alerts.length === 0 ? (
             <div className="text-sm text-[#6B7280]">
               Nenhum alerta por enquanto. Continue registrando e acompanhando seus limites.
