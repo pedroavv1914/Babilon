@@ -75,7 +75,7 @@ export default function Register() {
   }
 
   return (
-    <div className="h-[calc(90vh-140px)] w-full flex items-center justify-center px-4 py-6">
+    <div className="w-full flex justify-center px-4 py-6 lg:min-h-[calc(100vh-140px)] lg:items-center">
       <div className="w-full max-w-[1040px] grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Painel visual / manifesto */}
         <div className="relative overflow-hidden rounded-2xl border border-[#D6D3C8] bg-[#0B1220] shadow-[0_24px_80px_rgba(11,19,36,0.30)]">
