@@ -6,14 +6,15 @@ import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
 
 type Category = { id: number; name: string }
 type Alert = { id: number; type: string; severity: string; message: string; created_at: string }
-type TxRow = { id: number; amount: number; kind: 'despesa' | 'aporte_reserva'; occurred_at: string; category_id: number | null }
+type TransactionKind = 'despesa' | 'aporte_reserva' | 'pagamento_cartao'
+type TxRow = { id: number; amount: number; kind: TransactionKind; occurred_at: string; category_id: number | null }
 type BudgetRow = { category_id: number; limit_amount: number }
 
 export default function Transactions() {
   const [categories, setCategories] = useState<Category[]>([])
   const [categoryId, setCategoryId] = useState<number | null>(null)
   const [amount, setAmount] = useState<number>(0)
-  const [kind, setKind] = useState<'despesa' | 'aporte_reserva'>('despesa')
+  const [kind, setKind] = useState<TransactionKind>('despesa')
   const [date, setDate] = useState<string>(new Date().toISOString().slice(0, 10))
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [items, setItems] = useState<TxRow[]>([])
@@ -61,6 +62,8 @@ export default function Transactions() {
   const totals = useMemo(() => {
     const expenseTotal = items.reduce((acc, t) => acc + (t.kind === 'despesa' ? Number(t.amount ?? 0) : 0), 0)
     const reserveTotal = items.reduce((acc, t) => acc + (t.kind === 'aporte_reserva' ? Number(t.amount ?? 0) : 0), 0)
+    const cardPaymentTotal = items.reduce((acc, t) => acc + (t.kind === 'pagamento_cartao' ? Number(t.amount ?? 0) : 0), 0)
+    const total = expenseTotal + reserveTotal + cardPaymentTotal
     const txCount = items.length
     const expenseCount = items.filter((t) => t.kind === 'despesa').length
     const avgExpense = expenseCount > 0 ? expenseTotal / expenseCount : 0
@@ -75,7 +78,7 @@ export default function Transactions() {
       else if (spent >= lim * 0.8) warningCount += 1
     }
 
-    return { expenseTotal, reserveTotal, txCount, avgExpense, warningCount, criticalCount }
+    return { expenseTotal, reserveTotal, cardPaymentTotal, total, txCount, avgExpense, warningCount, criticalCount }
   }, [budgetLimitByCategoryId, items, spentByCategoryId])
 
   const expenseRows = useMemo(() => {
@@ -105,7 +108,7 @@ export default function Transactions() {
     return out
   }, [expenseRows])
 
-  const [listKind, setListKind] = useState<'all' | 'despesa' | 'aporte_reserva'>('all')
+  const [listKind, setListKind] = useState<'all' | TransactionKind>('all')
   const [listCategoryId, setListCategoryId] = useState<number | null>(null)
 
   const filteredItems = useMemo(() => {
@@ -172,7 +175,12 @@ export default function Transactions() {
         (tx || []).map((t: any) => ({
           id: Number(t.id),
           amount: Number(t.amount ?? 0),
-          kind: t.kind === 'aporte_reserva' ? 'aporte_reserva' : 'despesa',
+          kind:
+            t.kind === 'aporte_reserva'
+              ? 'aporte_reserva'
+              : t.kind === 'pagamento_cartao'
+                ? 'pagamento_cartao'
+                : 'despesa',
           occurred_at: String(t.occurred_at ?? ''),
           category_id: t.category_id === null || t.category_id === undefined ? null : Number(t.category_id),
         }))
@@ -290,7 +298,7 @@ export default function Transactions() {
                 </div>
                 <div>
                   <div className="font-[ui-serif,Georgia,serif] text-2xl tracking-[-0.6px] text-[#111827]">Transações</div>
-                  <div className="mt-1 text-xs text-[#6B7280]">Registre despesas e aportes. Veja o impacto no seu mês.</div>
+                  <div className="mt-1 text-xs text-[#6B7280]">Registre despesas, aportes e pagamentos de cartão. Veja o impacto no seu mês.</div>
                 </div>
               </div>
 
@@ -298,6 +306,7 @@ export default function Transactions() {
                 <Pill variant="sky">Mês: {monthLabel}</Pill>
                 <Pill variant="gold">Gastos: {fmt.format(totals.expenseTotal)}</Pill>
                 <Pill>Reserva: {fmt.format(totals.reserveTotal)}</Pill>
+                <Pill>Cartão: {fmt.format(totals.cardPaymentTotal)}</Pill>
                 <Pill>Itens: {totals.txCount}</Pill>
                 {isUpdating ? <Pill>Atualizando…</Pill> : null}
               </div>
@@ -350,7 +359,7 @@ export default function Transactions() {
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <WideKpi title="Despesas" value={fmt.format(totals.expenseTotal)} subtitle="Total do mês" tone={totals.criticalCount > 0 ? 'bad' : totals.warningCount > 0 ? 'warn' : 'neutral'} />
         <WideKpi title="Aportes" value={fmt.format(totals.reserveTotal)} subtitle="Reserva de emergência" tone="ok" />
-        <WideKpi title="Total" value={fmt.format(totals.expenseTotal + totals.reserveTotal)} subtitle="Somatório geral" />
+        <WideKpi title="Total" value={fmt.format(totals.total)} subtitle="Somatório geral" />
         <WideKpi title="Média (despesa)" value={fmt.format(totals.avgExpense)} subtitle="Por transação" />
         <WideKpi title="Alertas" value={String(alerts.length)} subtitle="Últimos eventos" tone={alerts.some((a) => a.severity === 'critical') ? 'bad' : alerts.length > 0 ? 'warn' : 'neutral'} />
       </div>
@@ -378,6 +387,7 @@ export default function Transactions() {
               >
                 <option value="despesa">Despesa</option>
                 <option value="aporte_reserva">Aporte à Reserva</option>
+                <option value="pagamento_cartao">Pagamento de Cartão</option>
               </select>
             </div>
 
@@ -426,7 +436,7 @@ export default function Transactions() {
             <div className="rounded-xl border border-[#E4E1D6] bg-white p-3">
               <div className="text-xs text-[#6B7280]">Resumo</div>
               <div className="mt-1 text-sm text-[#111827]">
-                {kind === 'despesa' ? 'Despesa' : 'Aporte'} de {fmt.format(Math.max(0, amount))}{' '}
+                {kind === 'despesa' ? 'Despesa' : kind === 'aporte_reserva' ? 'Aporte' : 'Pagamento de Cartão'} de {fmt.format(Math.max(0, amount))}{' '}
                 {selectedCategoryName && kind === 'despesa' ? `em ${selectedCategoryName}` : ''}
               </div>
               {kind === 'despesa' && categoryId && selectedBudgetLimit > 0 ? (
@@ -470,6 +480,7 @@ export default function Transactions() {
               <option value="all">Todos os tipos</option>
               <option value="despesa">Somente despesas</option>
               <option value="aporte_reserva">Somente aportes</option>
+              <option value="pagamento_cartao">Somente pagamentos de cartão</option>
             </select>
             <select
               className="rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
@@ -499,7 +510,7 @@ export default function Transactions() {
           </div>
 
           {items.length === 0 ? (
-            <div className="mt-4 text-sm text-[#6B7280]">Sem transações neste mês. Registre uma despesa ou aporte para começar.</div>
+            <div className="mt-4 text-sm text-[#6B7280]">Sem transações neste mês. Registre uma despesa, aporte ou pagamento de cartão para começar.</div>
           ) : filteredItems.length === 0 ? (
             <div className="mt-4 text-sm text-[#6B7280]">Nenhuma transação encontrada com os filtros atuais.</div>
           ) : (
@@ -509,7 +520,9 @@ export default function Transactions() {
                 const badge =
                   t.kind === 'aporte_reserva'
                     ? 'bg-[#E6F6FE] text-[#0B5E86] border-[#0EA5E9]/30'
-                    : 'bg-[#F5F2EB] text-[#5A4A1A] border-[#C2A14D]/40'
+                    : t.kind === 'pagamento_cartao'
+                      ? 'bg-[#EEF2FF] text-[#3730A3] border-[#6366F1]/30'
+                      : 'bg-[#F5F2EB] text-[#5A4A1A] border-[#C2A14D]/40'
                 const dt = t.occurred_at ? new Date(t.occurred_at) : null
                 const dateLabel = dt && !Number.isNaN(dt.getTime()) ? dt.toLocaleDateString('pt-BR') : String(t.occurred_at ?? '')
                 return (
@@ -518,7 +531,7 @@ export default function Transactions() {
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className={`text-[11px] rounded-full border px-2 py-0.5 ${badge}`}>
-                            {t.kind === 'aporte_reserva' ? 'aporte' : 'despesa'}
+                            {t.kind === 'aporte_reserva' ? 'aporte' : t.kind === 'pagamento_cartao' ? 'cartão' : 'despesa'}
                           </span>
                           <span className="text-[11px] text-[#6B7280]">{dateLabel}</span>
                         </div>
