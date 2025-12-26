@@ -8,6 +8,8 @@ type BudgetUsage = { category_name: string; limit_amount: number; spent_amount: 
 type Summary = { month: number; year: number; income_amount: number; savings_amount: number; expenses_amount: number }
 type Alert = { id: number; message: string; severity: string }
 type Reserve = { current_amount: number; target_amount: number | null; target_months: number }
+type SavingGoal = { id: number; name: string; target_amount: number | null; allocation_percent: number; is_active: boolean; created_at: string }
+type GoalTx = { goal_id: number | null; amount: number }
 
 export default function Dashboard() {
   const [usage, setUsage] = useState<BudgetUsage[]>([])
@@ -15,6 +17,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [reserve, setReserve] = useState<Reserve | null>(null)
+  const [goals, setGoals] = useState<SavingGoal[]>([])
+  const [goalSavedById, setGoalSavedById] = useState<Record<number, number>>({})
 
   const now = new Date()
   const [month, setMonth] = useState(now.getMonth() + 1)
@@ -57,10 +61,44 @@ export default function Dashboard() {
           .eq('user_id', uid)
           .maybeSingle()
 
+        const [{ data: g, error: gErr }, { data: tx, error: txErr }] = await Promise.all([
+          supabase
+            .from('saving_goals')
+            .select('id,name,target_amount,allocation_percent,is_active,created_at')
+            .eq('user_id', uid)
+            .order('created_at', { ascending: false }),
+          supabase
+            .from('transactions')
+            .select('goal_id,amount')
+            .eq('user_id', uid)
+            .eq('kind', 'aporte_meta')
+            .not('goal_id', 'is', null)
+            .limit(5000),
+        ])
+        if (gErr) throw gErr
+        if (txErr) throw txErr
+
         setUsage(u || [])
         setSummary(s || null)
         setAlerts(a || [])
         setReserve(r || null)
+        setGoals(
+          (g || []).map((row: any) => ({
+            id: Number(row?.id ?? 0),
+            name: String(row?.name ?? ''),
+            target_amount: row?.target_amount === null || row?.target_amount === undefined ? null : Number(row.target_amount),
+            allocation_percent: Number(row?.allocation_percent ?? 0),
+            is_active: Boolean(row?.is_active ?? true),
+            created_at: String(row?.created_at ?? ''),
+          }))
+        )
+        const goalMap: Record<number, number> = {}
+        for (const t of (tx || []) as GoalTx[]) {
+          const gid = Number((t as any).goal_id ?? 0)
+          if (!gid) continue
+          goalMap[gid] = (goalMap[gid] ?? 0) + Math.max(0, Number((t as any).amount ?? 0))
+        }
+        setGoalSavedById(goalMap)
       } finally {
         if (mounted) setLoading(false)
       }
@@ -71,6 +109,7 @@ export default function Dashboard() {
     const ch = supabase
       .channel('dashboard')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'saving_goals' }, () => load())
       .subscribe()
 
     return () => {
@@ -95,6 +134,8 @@ export default function Dashboard() {
   const reserveTarget =
     reserve?.target_amount === null || reserve?.target_amount === undefined ? null : Number(reserve.target_amount)
   const reservePct = reserveTarget && reserveTarget > 0 ? Math.min(1, reserveCurrent / reserveTarget) : null
+  const activeGoals = useMemo(() => goals.filter((g) => g.is_active), [goals])
+  const goalsSavedTotal = useMemo(() => Object.values(goalSavedById).reduce((acc, v) => acc + Math.max(0, Number(v ?? 0)), 0), [goalSavedById])
 
   const topUsage = [...usage]
     .map((u) => ({
@@ -253,6 +294,7 @@ export default function Dashboard() {
                 <div className="mt-4 flex flex-wrap items-center gap-2">
                   <Pill variant="sky">Mês: {String(month).padStart(2, '0')}/{year}</Pill>
                   <Pill variant="gold">Poupança: {(savingsRate * 100).toFixed(1)}%</Pill>
+                  <Pill>Metas: {fmt(goalsSavedTotal)}</Pill>
                   <Pill>Alertas: {alerts.length}</Pill>
                 </div>
               </div>
@@ -404,6 +446,51 @@ export default function Dashboard() {
                 <div className="mt-4 h-[2px] w-16 rounded-full bg-[#C2A14D]" />
               </div>
             </div>
+          </Card>
+
+          <Card
+            title="Metas"
+            subtitle="Acompanhe o progresso do que você decidiu construir."
+            right={<Pill variant="gold">Ativas: {activeGoals.length}</Pill>}
+            className="lg:col-span-12"
+          >
+            {activeGoals.length === 0 ? (
+              <div className="text-sm text-[#6B7280]">Você ainda não ativou metas. Configure em Planejamento.</div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {activeGoals.map((g) => {
+                  const saved = Math.max(0, Number(goalSavedById[g.id] ?? 0))
+                  const target = g.target_amount === null || g.target_amount === undefined ? null : Math.max(0, Number(g.target_amount))
+                  const pct = target && target > 0 ? Math.min(1, saved / target) : null
+                  return (
+                    <div key={g.id} className="rounded-2xl border border-[#E4E1D6] bg-white p-4 shadow-[0_10px_30px_rgba(11,19,36,0.06)]">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-[#111827] truncate">{g.name || 'Meta'}</div>
+                          <div className="mt-1 text-xs text-[#6B7280]">Percentual: {(Math.max(0, Number(g.allocation_percent ?? 0)) * 100).toFixed(1)}%</div>
+                        </div>
+                        <Pill variant="sky">{fmt(saved)}</Pill>
+                      </div>
+
+                      {target ? (
+                        <>
+                          <div className="mt-3 text-xs text-[#6B7280] flex items-center justify-between">
+                            <span>Meta</span>
+                            <span className="text-[#111827] font-medium">{fmt(target)}</span>
+                          </div>
+                          <div className="mt-3 h-2 w-full rounded-full bg-[#E7E1D4] overflow-hidden">
+                            <div className="h-full bg-emerald-500" style={{ width: `${(pct ?? 0) * 100}%` }} />
+                          </div>
+                          <div className="mt-2 text-[11px] text-[#6B7280]">{Math.round((pct ?? 0) * 100)}% da meta</div>
+                        </>
+                      ) : (
+                        <div className="mt-3 text-xs text-[#6B7280]">Defina um valor alvo em Planejamento para ver o progresso.</div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </Card>
         </div>
 
