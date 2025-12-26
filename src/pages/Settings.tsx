@@ -2,14 +2,29 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { getUserId } from '../lib/auth'
 
-type UserSettings = { user_id: string; pay_percent: number; emergency_months: number }
+type UserSettings = { user_id: string; pay_percent: number; reserve_percent: number; emergency_months: number }
 type Reserve = { user_id: string; target_months: number; target_amount: number | null; current_amount: number }
 type MonthlyExpense = { month: number; year: number; expenses_amount: number }
+type SavingGoal = {
+  id: number
+  user_id: string
+  name: string
+  target_amount: number | null
+  allocation_percent: number
+  is_active: boolean
+  created_at: string
+}
 
 export default function Settings() {
   const [settings, setSettings] = useState<UserSettings | null>(null)
   const [reserve, setReserve] = useState<Reserve | null>(null)
   const [expenseHistory, setExpenseHistory] = useState<MonthlyExpense[]>([])
+  const [goals, setGoals] = useState<SavingGoal[]>([])
+  const [deletedGoalIds, setDeletedGoalIds] = useState<number[]>([])
+  const [newGoalName, setNewGoalName] = useState('')
+  const [newGoalTarget, setNewGoalTarget] = useState<number | ''>('')
+  const [newGoalPercent, setNewGoalPercent] = useState<number | ''>('')
+  const [newGoalActive, setNewGoalActive] = useState(true)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -30,8 +45,9 @@ export default function Settings() {
       if (!uid) return
       if (seq !== loadSeq.current) return
 
-      const [{ data: s, error: sErr }, { data: r, error: rErr }, { data: h, error: hErr }] = await Promise.all([
-        supabase.from('user_settings').select('user_id,pay_percent,emergency_months').eq('user_id', uid).maybeSingle(),
+      const [{ data: s, error: sErr }, { data: r, error: rErr }, { data: h, error: hErr }, { data: g, error: gErr }] =
+        await Promise.all([
+          supabase.from('user_settings').select('user_id,pay_percent,reserve_percent,emergency_months').eq('user_id', uid).maybeSingle(),
         supabase.from('emergency_reserve').select('user_id,target_months,target_amount,current_amount').eq('user_id', uid).maybeSingle(),
         supabase
           .from('vw_monthly_summary')
@@ -40,20 +56,31 @@ export default function Settings() {
           .order('year', { ascending: false })
           .order('month', { ascending: false })
           .limit(6),
-      ])
+        supabase
+          .from('saving_goals')
+          .select('id,user_id,name,target_amount,allocation_percent,is_active,created_at')
+          .eq('user_id', uid)
+          .order('created_at', { ascending: false }),
+        ])
       if (sErr) throw sErr
       if (rErr) throw rErr
       if (hErr) throw hErr
+      if (gErr) throw gErr
       if (seq !== loadSeq.current) return
+
+      const pay = s ? Number((s as any).pay_percent ?? 0.1) : 0.1
+      const reservePercentRaw =
+        s && (s as any).reserve_percent !== null && (s as any).reserve_percent !== undefined ? Number((s as any).reserve_percent) : pay
 
       setSettings(
         s
           ? {
               user_id: String((s as any).user_id ?? uid),
-              pay_percent: Number((s as any).pay_percent ?? 0.1),
+              pay_percent: pay,
+              reserve_percent: reservePercentRaw,
               emergency_months: Number((s as any).emergency_months ?? 6),
             }
-          : { user_id: uid, pay_percent: 0.1, emergency_months: 6 }
+          : { user_id: uid, pay_percent: 0.1, reserve_percent: 0.1, emergency_months: 6 }
       )
       setReserve(
         r
@@ -74,6 +101,19 @@ export default function Settings() {
           expenses_amount: Number(row?.expenses_amount ?? 0),
         }))
       )
+
+      setGoals(
+        (g || []).map((row: any) => ({
+          id: Number(row?.id ?? 0),
+          user_id: String(row?.user_id ?? uid),
+          name: String(row?.name ?? ''),
+          target_amount: row?.target_amount === null || row?.target_amount === undefined ? null : Number(row.target_amount),
+          allocation_percent: Number(row?.allocation_percent ?? 0),
+          is_active: Boolean(row?.is_active ?? true),
+          created_at: String(row?.created_at ?? ''),
+        }))
+      )
+      setDeletedGoalIds([])
     } catch (e: any) {
       if (seq !== loadSeq.current) return
       setError(typeof e?.message === 'string' ? e.message : 'Erro ao carregar planejamento.')
@@ -89,6 +129,7 @@ export default function Settings() {
       .channel('planning')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'user_settings' }, () => load())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'emergency_reserve' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'saving_goals' }, () => load())
       .subscribe()
     return () => {
       loadSeq.current += 1
@@ -113,6 +154,37 @@ export default function Settings() {
       return
     }
 
+    const rp = Number(settings.reserve_percent ?? 0)
+    if (!Number.isFinite(rp) || rp < 0 || rp > pp) {
+      setError('Informe um percentual válido para a reserva (0 até o percentual mínimo).')
+      return
+    }
+
+    const activeGoals = goals.filter((g) => g.is_active)
+    for (const g of goals) {
+      if (!g.name.trim()) {
+        setError('Dê um nome para todas as metas (ou remova a meta vazia).')
+        return
+      }
+      const ap = Number(g.allocation_percent ?? 0)
+      if (!Number.isFinite(ap) || ap < 0 || ap > pp) {
+        setError('Verifique os percentuais das metas (0 até o percentual mínimo).')
+        return
+      }
+      const ta = g.target_amount === null ? null : Number(g.target_amount)
+      if (ta !== null && (!Number.isFinite(ta) || ta <= 0)) {
+        setError('Se definir um valor alvo para uma meta, ele precisa ser maior que zero.')
+        return
+      }
+    }
+
+    const goalsSum = activeGoals.reduce((acc, g) => acc + Math.max(0, Number(g.allocation_percent ?? 0)), 0)
+    const planSum = rp + goalsSum
+    if (Math.abs(planSum - pp) > 1e-9) {
+      setError('A soma dos percentuais (reserva + metas ativas) deve fechar exatamente o percentual mínimo.')
+      return
+    }
+
     const tm = Number(reserve.target_months ?? 0)
     if (!Number.isFinite(tm) || tm < 1 || tm > 36) {
       setError('Informe a meta de meses (1 a 36).')
@@ -132,7 +204,7 @@ export default function Settings() {
       const em = Math.max(1, Math.min(36, Number(settings.emergency_months ?? 6)))
 
       const { error: sErr } = await supabase.from('user_settings').upsert(
-        { user_id: uid, pay_percent: pp, emergency_months: em },
+        { user_id: uid, pay_percent: pp, reserve_percent: rp, emergency_months: em },
         { onConflict: 'user_id' }
       )
       if (sErr) throw sErr
@@ -142,6 +214,42 @@ export default function Settings() {
         { onConflict: 'user_id' }
       )
       if (rErr) throw rErr
+
+      const deleteIds = deletedGoalIds.filter((v) => Number.isFinite(v) && v > 0)
+      if (deleteIds.length) {
+        const { error: dErr } = await supabase.from('saving_goals').delete().eq('user_id', uid).in('id', deleteIds)
+        if (dErr) throw dErr
+      }
+
+      const existing = goals.filter((g) => Number.isFinite(g.id) && g.id > 0)
+      const updates = existing.map((g) =>
+        supabase
+          .from('saving_goals')
+          .update({
+            name: g.name.trim(),
+            target_amount: g.target_amount === null ? null : Number(g.target_amount),
+            allocation_percent: Number(g.allocation_percent ?? 0),
+            is_active: Boolean(g.is_active),
+          })
+          .match({ id: g.id, user_id: uid })
+      )
+      const results = updates.length ? await Promise.all(updates) : []
+      for (const r of results) {
+        if (r.error) throw r.error
+      }
+
+      const pendingInserts = goals.filter((g) => Number.isFinite(g.id) && g.id <= 0)
+      if (pendingInserts.length) {
+        const payload = pendingInserts.map((g) => ({
+          user_id: uid,
+          name: g.name.trim(),
+          target_amount: g.target_amount === null ? null : Number(g.target_amount),
+          allocation_percent: Number(g.allocation_percent ?? 0),
+          is_active: Boolean(g.is_active),
+        }))
+        const { error: iErr } = await supabase.from('saving_goals').insert(payload)
+        if (iErr) throw iErr
+      }
 
       setNotice('Planejamento salvo.')
       await load()
@@ -153,6 +261,10 @@ export default function Settings() {
   }
 
   const payPercent = Math.max(0, Math.min(0.95, Number(settings?.pay_percent ?? 0.1)))
+  const reservePercent = Math.max(0, Math.min(payPercent, Number(settings?.reserve_percent ?? payPercent)))
+  const activeGoalsSum = useMemo(() => goals.filter((g) => g.is_active).reduce((acc, g) => acc + Math.max(0, Number(g.allocation_percent ?? 0)), 0), [goals])
+  const allocationSum = reservePercent + activeGoalsSum
+  const allocationLeft = Math.max(0, payPercent - allocationSum)
   const reserveCurrent = Math.max(0, Number(reserve?.current_amount ?? 0))
   const reserveTarget =
     reserve?.target_amount === null || reserve?.target_amount === undefined ? null : Math.max(0, Number(reserve.target_amount))
@@ -237,6 +349,7 @@ export default function Settings() {
 
               <div className="mt-4 flex flex-wrap items-center gap-2">
                 <Pill variant="gold">Pague-se primeiro: {(payPercent * 100).toFixed(1)}%</Pill>
+                <Pill variant="neutral">Distribuído: {(Math.min(1, allocationSum) * 100).toFixed(1)}%</Pill>
                 <Pill variant="sky">Tempo p/ meta: {aporteLabel ?? '—'}</Pill>
                 <Pill>Saldo reserva: {fmt.format(reserveCurrent)}</Pill>
                 <Pill>Meta: {reserveTarget ? fmt.format(reserveTarget) : '—'}</Pill>
@@ -309,6 +422,25 @@ export default function Settings() {
                 disabled={saving || loading}
               />
               <div className="mt-2 text-[11px] text-[#6B7280]">Dica: 0.10 = 10%, 0.15 = 15%.</div>
+            </div>
+
+            <div>
+              <label className="block text-xs text-[#6B7280] mb-1">Percentual para a reserva</label>
+              <input
+                type="number"
+                step="0.01"
+                inputMode="decimal"
+                placeholder="Ex.: 0.10 para 10%"
+                className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
+                value={settings?.reserve_percent ?? 0}
+                onChange={(e) =>
+                  setSettings((s) => (s ? { ...s, reserve_percent: e.target.value === '' ? 0 : Number(e.target.value) } : s))
+                }
+                disabled={saving || loading}
+              />
+              <div className="mt-2 text-[11px] text-[#6B7280]">
+                Soma atual (reserva + metas ativas): {(allocationSum * 100).toFixed(1)}% · sobra: {(allocationLeft * 100).toFixed(1)}%.
+              </div>
             </div>
 
             <div className="rounded-2xl border border-[#E4E1D6] bg-white p-4 shadow-[0_10px_30px_rgba(11,19,36,0.06)]">
@@ -455,6 +587,183 @@ export default function Settings() {
           </div>
         </section>
       </div>
+
+      <section className="rounded-2xl border border-[#D6D3C8] bg-[#FBFAF7] p-5 shadow-[0_10px_30px_rgba(11,19,36,0.10)]">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="font-semibold text-[#111827]">Metas</div>
+            <div className="mt-1 text-xs text-[#6B7280]">Crie metas e defina percentuais de aporte por renda.</div>
+          </div>
+          <span className="text-xs text-[#6B7280] rounded-full border border-[#D6D3C8] bg-white px-2 py-1">
+            Ativas: {goals.filter((g) => g.is_active).length}
+          </span>
+        </div>
+
+        <div className="mt-3 h-[2px] w-16 rounded-full bg-[#C2A14D]" />
+
+        {goals.length === 0 ? (
+          <div className="mt-4 text-sm text-[#6B7280]">Nenhuma meta cadastrada ainda.</div>
+        ) : (
+          <div className="mt-4 space-y-3">
+            {goals.map((g) => (
+              <div key={g.id} className="rounded-2xl border border-[#E4E1D6] bg-white p-4 shadow-[0_10px_30px_rgba(11,19,36,0.06)]">
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                  <div className="md:col-span-4">
+                    <label className="block text-xs text-[#6B7280] mb-1">Nome</label>
+                    <input
+                      type="text"
+                      className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
+                      value={g.name}
+                      onChange={(e) =>
+                        setGoals((all) => all.map((it) => (it.id === g.id ? { ...it, name: e.target.value } : it)))
+                      }
+                      disabled={saving || loading}
+                    />
+                  </div>
+
+                  <div className="md:col-span-3">
+                    <label className="block text-xs text-[#6B7280] mb-1">Percentual</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      inputMode="decimal"
+                      className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
+                      value={g.allocation_percent}
+                      onChange={(e) =>
+                        setGoals((all) =>
+                          all.map((it) =>
+                            it.id === g.id ? { ...it, allocation_percent: e.target.value === '' ? 0 : Number(e.target.value) } : it
+                          )
+                        )
+                      }
+                      disabled={saving || loading}
+                    />
+                  </div>
+
+                  <div className="md:col-span-3">
+                    <label className="block text-xs text-[#6B7280] mb-1">Valor alvo (opcional)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      inputMode="decimal"
+                      className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
+                      value={g.target_amount === null ? '' : g.target_amount}
+                      onChange={(e) =>
+                        setGoals((all) =>
+                          all.map((it) =>
+                            it.id === g.id ? { ...it, target_amount: e.target.value === '' ? null : Number(e.target.value) } : it
+                          )
+                        )
+                      }
+                      disabled={saving || loading}
+                    />
+                  </div>
+
+                  <div className="md:col-span-2 flex items-center justify-between gap-2">
+                    <label className="flex items-center gap-2 text-sm text-[#111827]">
+                      <input
+                        type="checkbox"
+                        checked={g.is_active}
+                        onChange={(e) =>
+                          setGoals((all) => all.map((it) => (it.id === g.id ? { ...it, is_active: e.target.checked } : it)))
+                        }
+                        disabled={saving || loading}
+                      />
+                      Ativa
+                    </label>
+                    <button
+                      type="button"
+                      className="rounded-xl border border-[#E4E1D6] bg-white px-3 py-2 text-xs text-[#991B1B] hover:bg-[#FEF2F2] disabled:opacity-50"
+                      onClick={() => {
+                        setGoals((all) => all.filter((it) => it.id !== g.id))
+                        setDeletedGoalIds((ids) => (ids.includes(g.id) ? ids : [...ids, g.id]))
+                      }}
+                      disabled={saving || loading}
+                    >
+                      Remover
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="mt-5 rounded-2xl border border-[#E4E1D6] bg-white p-4 shadow-[0_10px_30px_rgba(11,19,36,0.06)]">
+          <div className="font-semibold text-[#111827]">Nova meta</div>
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+            <div className="md:col-span-4">
+              <label className="block text-xs text-[#6B7280] mb-1">Nome</label>
+              <input
+                type="text"
+                className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
+                value={newGoalName}
+                onChange={(e) => setNewGoalName(e.target.value)}
+                disabled={saving || loading}
+              />
+            </div>
+            <div className="md:col-span-3">
+              <label className="block text-xs text-[#6B7280] mb-1">Percentual</label>
+              <input
+                type="number"
+                step="0.01"
+                inputMode="decimal"
+                className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
+                value={newGoalPercent}
+                onChange={(e) => setNewGoalPercent(e.target.value === '' ? '' : Number(e.target.value))}
+                disabled={saving || loading}
+              />
+            </div>
+            <div className="md:col-span-3">
+              <label className="block text-xs text-[#6B7280] mb-1">Valor alvo (opcional)</label>
+              <input
+                type="number"
+                step="0.01"
+                inputMode="decimal"
+                className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
+                value={newGoalTarget}
+                onChange={(e) => setNewGoalTarget(e.target.value === '' ? '' : Number(e.target.value))}
+                disabled={saving || loading}
+              />
+            </div>
+            <div className="md:col-span-2 flex items-center justify-between gap-2">
+              <label className="flex items-center gap-2 text-sm text-[#111827]">
+                <input type="checkbox" checked={newGoalActive} onChange={(e) => setNewGoalActive(e.target.checked)} disabled={saving || loading} />
+                Ativa
+              </label>
+              <button
+                type="button"
+                className="rounded-xl border border-[#D6D3C8] bg-[#111827] px-3 py-2 text-xs text-white hover:bg-black disabled:opacity-60"
+                onClick={() => {
+                  const name = newGoalName.trim()
+                  if (!name) return
+                  const np = newGoalPercent === '' ? 0 : Number(newGoalPercent)
+                  const nt = newGoalTarget === '' ? null : Number(newGoalTarget)
+                  setGoals((all) => [
+                    {
+                      id: -(Date.now() % 1000000) - Math.floor(Math.random() * 1000),
+                      user_id: settings?.user_id ?? '',
+                      name,
+                      target_amount: nt,
+                      allocation_percent: Number.isFinite(np) ? np : 0,
+                      is_active: Boolean(newGoalActive),
+                      created_at: new Date().toISOString(),
+                    },
+                    ...all,
+                  ])
+                  setNewGoalName('')
+                  setNewGoalTarget('')
+                  setNewGoalPercent('')
+                  setNewGoalActive(true)
+                }}
+                disabled={saving || loading}
+              >
+                Adicionar
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="text-xs text-[#6B7280]">Salve para aplicar as regras nas próximas operações.</div>
