@@ -5,16 +5,18 @@ import { getUserId } from '../lib/auth'
 type Income = { id: number; amount: number; month: number; year: number; rule_percent: number | null; created_at: string }
 type UserSettings = { pay_percent: number; reserve_percent: number }
 type SavingGoal = { id: number; name: string; allocation_percent: number; is_active: boolean }
-type TxRow = { amount: number; occurred_at: string; kind: string; goal_id: number | null }
+type TxRow = { amount: number; occurred_at: string; kind: string; goal_id: number | null; income_id?: number | null }
 type DeleteTarget = { id: number; amount: number }
 
 export default function Incomes() {
   const now = new Date()
   const [uid, setUid] = useState<string | null>(null)
   const [settings, setSettings] = useState<UserSettings | null>(null)
+  const [goals, setGoals] = useState<SavingGoal[]>([])
   const [items, setItems] = useState<Income[]>([])
   const [recent, setRecent] = useState<Income[]>([])
   const [savedMap, setSavedMap] = useState<Record<number, number>>({})
+  const [destMap, setDestMap] = useState<Record<number, string>>({})
 
   const [amount, setAmount] = useState<number>(0)
   const [filterMonth, setFilterMonth] = useState<number>(now.getMonth() + 1)
@@ -25,6 +27,9 @@ export default function Incomes() {
   })
   const [percentMode, setPercentMode] = useState<'default' | 'custom'>('default')
   const [rulePercent, setRulePercent] = useState<number | ''>('')
+  const [allocationMode, setAllocationMode] = useState<'auto' | 'manual'>('auto')
+  const [manualDestination, setManualDestination] = useState<string>('reserva')
+  const [savingsOverride, setSavingsOverride] = useState<number | ''>('')
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -34,8 +39,10 @@ export default function Incomes() {
   const fmt = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
   const defaultPercent = typeof settings?.pay_percent === 'number' ? settings.pay_percent : 0.1
   const effectivePercent = percentMode === 'custom' && rulePercent !== '' ? Number(rulePercent) : defaultPercent
-  const previewSavings = Math.max(0, amount) * Math.max(0, effectivePercent)
+  const computedSavings = Math.max(0, amount) * Math.max(0, effectivePercent)
+  const previewSavings = savingsOverride !== '' ? Math.max(0, Number(savingsOverride)) : computedSavings
   const previewAvailable = Math.max(0, amount) - previewSavings
+  const previewPercent = amount > 0 ? Math.max(0, previewSavings) / Math.max(0, amount) : 0
 
   const monthOptions = useMemo(() => Array.from({ length: 12 }, (_, i) => i + 1), [])
   const yearOptions = useMemo(() => [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1], [now])
@@ -70,58 +77,125 @@ export default function Incomes() {
     try {
       const startISO = new Date(Date.UTC(filterYear, filterMonth - 1, 1)).toISOString()
       const endISO = new Date(Date.UTC(filterYear, filterMonth, 1)).toISOString()
-      const [{ data: s, error: sErr }, { data: monthData, error: mErr }, { data: recData, error: rErr }, { data: tx, error: tErr }] =
+      const [
+        { data: s, error: sErr },
+        { data: g, error: gErr },
+        { data: monthData, error: mErr },
+        { data: recData, error: rErr },
+      ] =
         await Promise.all([
-        supabase.from('user_settings').select('pay_percent,reserve_percent').eq('user_id', uid).maybeSingle(),
-        supabase
-          .from('incomes')
-          .select('id,amount,month,year,rule_percent,created_at')
-          .eq('user_id', uid)
-          .eq('month', filterMonth)
-          .eq('year', filterYear)
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('incomes')
-          .select('id,amount,month,year,rule_percent,created_at')
-          .eq('user_id', uid)
-          .order('created_at', { ascending: false })
-          .limit(12),
-        supabase
-          .from('transactions')
-          .select('amount,occurred_at,kind,goal_id')
-          .eq('user_id', uid)
-          .gte('occurred_at', startISO)
-          .lt('occurred_at', endISO)
-          .in('kind', ['aporte_reserva', 'aporte_meta']),
-      ])
+          supabase.from('user_settings').select('pay_percent,reserve_percent').eq('user_id', uid).maybeSingle(),
+          supabase.from('saving_goals').select('id,name,allocation_percent,is_active').eq('user_id', uid),
+          supabase
+            .from('incomes')
+            .select('id,amount,month,year,rule_percent,created_at')
+            .eq('user_id', uid)
+            .eq('month', filterMonth)
+            .eq('year', filterYear)
+            .order('created_at', { ascending: false }),
+          supabase
+            .from('incomes')
+            .select('id,amount,month,year,rule_percent,created_at')
+            .eq('user_id', uid)
+            .order('created_at', { ascending: false })
+            .limit(12),
+        ])
 
       if (sErr) throw sErr
+      if (gErr) throw gErr
       if (mErr) throw mErr
       if (rErr) throw rErr
-      if (tErr) throw tErr
 
       const payPercent = s ? Number((s as any).pay_percent ?? 0.1) : 0.1
       const reservePercent =
         s && (s as any).reserve_percent !== null && (s as any).reserve_percent !== undefined ? Number((s as any).reserve_percent) : payPercent
       setSettings({ pay_percent: payPercent, reserve_percent: reservePercent })
+      const goalsList = ((g || []) as any[]).map(
+        (row): SavingGoal => ({
+          id: Number(row?.id ?? 0),
+          name: String(row?.name ?? ''),
+          allocation_percent: Number(row?.allocation_percent ?? 0),
+          is_active: Boolean(row?.is_active ?? true),
+        })
+      )
+      setGoals(goalsList)
       const monthItems = (monthData || []) as Income[]
       setItems(monthItems)
       setRecent((recData || []) as Income[])
 
-      const byOccurredAt: Record<string, number> = {}
-      for (const t of (tx || []) as TxRow[]) {
-        const key = String((t as any).occurred_at ?? '')
-        if (!key) continue
-        byOccurredAt[key] = (byOccurredAt[key] ?? 0) + Number((t as any).amount ?? 0)
+      let tx: any[] = []
+      let hasIncomeId = true
+      {
+        const q1 = await supabase
+          .from('transactions')
+          .select('amount,occurred_at,kind,goal_id,income_id')
+          .eq('user_id', uid)
+          .gte('occurred_at', startISO)
+          .lt('occurred_at', endISO)
+          .in('kind', ['aporte_reserva', 'aporte_meta'])
+        if (q1.error) {
+          const msg = String(q1.error.message ?? '')
+          if (msg.toLowerCase().includes('income_id')) {
+            hasIncomeId = false
+            const q2 = await supabase
+              .from('transactions')
+              .select('amount,occurred_at,kind,goal_id')
+              .eq('user_id', uid)
+              .gte('occurred_at', startISO)
+              .lt('occurred_at', endISO)
+              .in('kind', ['aporte_reserva', 'aporte_meta'])
+            if (q2.error) throw q2.error
+            tx = (q2.data || []) as any[]
+          } else {
+            throw q1.error
+          }
+        } else {
+          tx = (q1.data || []) as any[]
+        }
       }
+
+      const goalNameById: Record<number, string> = {}
+      for (const gg of goalsList) goalNameById[Number(gg.id)] = String(gg.name ?? '')
+
+      const groupedByIncomeId: Record<number, { total: number; kinds: Set<string>; goalIds: Set<number> }> = {}
+      const groupedByOccurredAt: Record<string, { total: number; kinds: Set<string>; goalIds: Set<number> }> = {}
+      for (const t of (tx || []) as TxRow[]) {
+        const k = String((t as any).kind ?? '')
+        const amt = Number((t as any).amount ?? 0)
+        const gid = (t as any).goal_id
+        const incId = (t as any).income_id
+        if (hasIncomeId && incId !== null && incId !== undefined && Number(incId) > 0) {
+          const key = Number(incId)
+          if (!groupedByIncomeId[key]) groupedByIncomeId[key] = { total: 0, kinds: new Set<string>(), goalIds: new Set<number>() }
+          groupedByIncomeId[key].total += amt
+          if (k) groupedByIncomeId[key].kinds.add(k)
+          if (gid !== null && gid !== undefined && Number(gid) > 0) groupedByIncomeId[key].goalIds.add(Number(gid))
+        } else {
+          const key = String((t as any).occurred_at ?? '')
+          if (!key) continue
+          if (!groupedByOccurredAt[key]) groupedByOccurredAt[key] = { total: 0, kinds: new Set<string>(), goalIds: new Set<number>() }
+          groupedByOccurredAt[key].total += amt
+          if (k) groupedByOccurredAt[key].kinds.add(k)
+          if (gid !== null && gid !== undefined && Number(gid) > 0) groupedByOccurredAt[key].goalIds.add(Number(gid))
+        }
+      }
+
       const map: Record<number, number> = {}
+      const dest: Record<number, string> = {}
       for (const inc of monthItems) {
-        const key = String((inc as any).created_at ?? '')
-        if (!key) continue
-        const v = byOccurredAt[key]
-        if (typeof v === 'number') map[Number(inc.id)] = Number(v ?? 0)
+        const byId = groupedByIncomeId[Number(inc.id)]
+        const byOcc = groupedByOccurredAt[String((inc as any).created_at ?? '')]
+        const g = byId || byOcc
+        if (!g) continue
+        map[Number(inc.id)] = Number(g.total ?? 0)
+        if (g.kinds.size === 1 && g.kinds.has('aporte_reserva')) dest[Number(inc.id)] = 'Reserva'
+        else if (g.kinds.size === 1 && g.kinds.has('aporte_meta') && g.goalIds.size === 1) {
+          const onlyId = [...g.goalIds][0]
+          dest[Number(inc.id)] = goalNameById[Number(onlyId)] || 'Meta'
+        } else if (g.kinds.size > 0) dest[Number(inc.id)] = 'Distribuído'
       }
       setSavedMap(map)
+      setDestMap(dest)
     } catch (e: any) {
       setError(typeof e?.message === 'string' ? e.message : 'Erro ao carregar rendas')
     } finally {
@@ -195,8 +269,25 @@ export default function Incomes() {
         return
       }
     }
-    const usedPercent = percentMode === 'custom' ? Number(rulePercent) : defaultPercent
-    const savingsAmount = Math.max(0, Number(amount ?? 0)) * Math.max(0, Number(usedPercent ?? 0))
+    const selectedPercent = percentMode === 'custom' ? Number(rulePercent) : defaultPercent
+    const selectedByPercent = Math.max(0, Number(amount ?? 0)) * Math.max(0, Number(selectedPercent ?? 0))
+    const hasOverride = savingsOverride !== ''
+    if (hasOverride) {
+      if (Number.isNaN(Number(savingsOverride)) || !Number.isFinite(Number(savingsOverride))) {
+        setError('Informe um valor de ouro guardado válido')
+        return
+      }
+      if (Number(savingsOverride) < 0) {
+        setError('O valor do ouro guardado não pode ser negativo')
+        return
+      }
+      if (Number(savingsOverride) > Number(amount ?? 0)) {
+        setError('O valor do ouro guardado não pode exceder a renda')
+        return
+      }
+    }
+    const savingsAmount = hasOverride ? Math.max(0, Number(savingsOverride)) : selectedByPercent
+    const appliedPercent = Number(amount ?? 0) > 0 ? savingsAmount / Number(amount ?? 0) : 0
 
     const { data: createdIncome, error: incErr } = await supabase
       .from('incomes')
@@ -205,7 +296,7 @@ export default function Incomes() {
         amount,
         month,
         year,
-        rule_percent: percentMode === 'custom' ? Number(rulePercent) : null,
+        rule_percent: hasOverride || percentMode === 'custom' ? appliedPercent : null,
         created_at: dtISO,
       })
       .select('id')
@@ -224,7 +315,7 @@ export default function Incomes() {
         if (sErr) throw sErr
         if (gErr) throw gErr
 
-        const payPercent = s ? Number((s as any).pay_percent ?? usedPercent) : usedPercent
+        const payPercent = s ? Number((s as any).pay_percent ?? appliedPercent) : appliedPercent
         const reservePercent =
           s && (s as any).reserve_percent !== null && (s as any).reserve_percent !== undefined ? Number((s as any).reserve_percent) : payPercent
         const goals = ((g || []) as any[]).map(
@@ -237,33 +328,60 @@ export default function Incomes() {
         )
 
         const activeGoals = goals.filter((gg) => gg.is_active && Number(gg.allocation_percent ?? 0) > 0)
-        const totalPercent = Math.max(0, Number(usedPercent ?? 0))
+        const totalPercent = Math.max(0, Number(appliedPercent ?? 0))
 
         const txPayload: any[] = []
+        const incomeId = Number((createdIncome as any)?.id)
         const base = Math.max(0, Number(payPercent ?? 0))
         const scale = base > 0 ? totalPercent / base : 0
 
-        if (base <= 0 || scale <= 0) {
-          txPayload.push({ user_id: uid, amount: savingsAmount, kind: 'aporte_reserva', occurred_at: dtISO })
+        if (allocationMode === 'manual') {
+          if (manualDestination.startsWith('meta:')) {
+            const gid = Number(manualDestination.slice('meta:'.length))
+            if (!Number.isFinite(gid) || gid <= 0) throw new Error('Selecione uma meta válida')
+            txPayload.push({ user_id: uid, income_id: incomeId, amount: savingsAmount, kind: 'aporte_meta', goal_id: gid, occurred_at: dtISO })
+          } else {
+            txPayload.push({ user_id: uid, income_id: incomeId, amount: savingsAmount, kind: 'aporte_reserva', occurred_at: dtISO })
+          }
+        } else if (base <= 0 || scale <= 0) {
+          txPayload.push({ user_id: uid, income_id: incomeId, amount: savingsAmount, kind: 'aporte_reserva', occurred_at: dtISO })
         } else {
           const reserveAmount = Math.max(0, Number(amount ?? 0)) * Math.max(0, Number(reservePercent ?? 0)) * scale
           if (Number.isFinite(reserveAmount) && reserveAmount > 0) {
-            txPayload.push({ user_id: uid, amount: reserveAmount, kind: 'aporte_reserva', occurred_at: dtISO })
+            txPayload.push({ user_id: uid, income_id: incomeId, amount: reserveAmount, kind: 'aporte_reserva', occurred_at: dtISO })
           }
           for (const gg of activeGoals) {
             const ga = Math.max(0, Number(amount ?? 0)) * Math.max(0, Number(gg.allocation_percent ?? 0)) * scale
             if (Number.isFinite(ga) && ga > 0) {
-              txPayload.push({ user_id: uid, amount: ga, kind: 'aporte_meta', goal_id: gg.id, occurred_at: dtISO })
+              txPayload.push({ user_id: uid, income_id: incomeId, amount: ga, kind: 'aporte_meta', goal_id: gg.id, occurred_at: dtISO })
             }
           }
         }
 
         if (txPayload.length) {
-          const { error: txErr } = await supabase.from('transactions').insert(txPayload)
-          if (txErr) throw txErr
+          const ins1 = await supabase.from('transactions').insert(txPayload)
+          if (ins1.error) {
+            const msg = String(ins1.error.message ?? '')
+            if (msg.toLowerCase().includes('income_id')) {
+              const fallback = txPayload.map(({ income_id, ...rest }) => rest)
+              const ins2 = await supabase.from('transactions').insert(fallback)
+              if (ins2.error) throw ins2.error
+            } else {
+              throw ins1.error
+            }
+          }
         }
       } catch (e: any) {
-        await supabase.from('transactions').delete().match({ user_id: uid, occurred_at: dtISO }).in('kind', ['aporte_reserva', 'aporte_meta'])
+        const incomeId = Number((createdIncome as any)?.id)
+        const del1 = await supabase.from('transactions').delete().match({ user_id: uid, income_id: incomeId }).in('kind', ['aporte_reserva', 'aporte_meta'])
+        if (del1.error) {
+          const msg = String(del1.error.message ?? '')
+          if (msg.toLowerCase().includes('income_id')) {
+            await supabase.from('transactions').delete().match({ user_id: uid, occurred_at: dtISO }).in('kind', ['aporte_reserva', 'aporte_meta'])
+          } else {
+            throw del1.error
+          }
+        }
         await supabase.from('incomes').delete().match({ id: Number((createdIncome as any)?.id), user_id: uid })
         setError(typeof e?.message === 'string' ? e.message : 'Erro ao registrar aportes.')
         return
@@ -273,6 +391,9 @@ export default function Incomes() {
     setAmount(0)
     setRulePercent('')
     setPercentMode('default')
+    setAllocationMode('auto')
+    setManualDestination('reserva')
+    setSavingsOverride('')
     await load()
   }
 
@@ -289,13 +410,25 @@ export default function Incomes() {
     setError(null)
     setDeletingId(deleteTarget.id)
     try {
-      const target = rows.find((r) => r.id === deleteTarget.id)
-      if (target) {
-        await supabase
-          .from('transactions')
-          .delete()
-          .match({ user_id: uid, occurred_at: String(target.created_at ?? '') })
-          .in('kind', ['aporte_reserva', 'aporte_meta'])
+      const del1 = await supabase
+        .from('transactions')
+        .delete()
+        .match({ user_id: uid, income_id: deleteTarget.id })
+        .in('kind', ['aporte_reserva', 'aporte_meta'])
+      if (del1.error) {
+        const msg = String(del1.error.message ?? '')
+        if (msg.toLowerCase().includes('income_id')) {
+          const target = rows.find((r) => r.id === deleteTarget.id)
+          if (target) {
+            await supabase
+              .from('transactions')
+              .delete()
+              .match({ user_id: uid, occurred_at: String(target.created_at ?? '') })
+              .in('kind', ['aporte_reserva', 'aporte_meta'])
+          }
+        } else {
+          throw del1.error
+        }
       }
       const { error } = await supabase.from('incomes').delete().eq('id', deleteTarget.id).eq('user_id', uid)
       if (error) throw error
@@ -486,7 +619,7 @@ export default function Incomes() {
         {/* FORM (mais “produto”) */}
         <Card
           title="Cadastrar renda"
-          subtitle="Defina data, valor e o percentual aplicado nesta entrada."
+          subtitle="Defina data, valor, percentual e destino do ouro guardado."
           right={<Pill>Entrada</Pill>}
           className="lg:col-span-4"
         >
@@ -543,11 +676,55 @@ export default function Incomes() {
               </div>
             </div>
 
+            <div>
+              <label className="block text-xs text-[#6B7280] mb-1">Destino do ouro guardado</label>
+              <div className="mt-1 space-y-2">
+                <label className="flex items-center gap-2 text-sm text-[#111827]">
+                  <input type="radio" name="allocationMode" checked={allocationMode === 'auto'} onChange={() => setAllocationMode('auto')} />
+                  Distribuir conforme configurações
+                </label>
+                <label className="flex items-center gap-2 text-sm text-[#111827]">
+                  <input type="radio" name="allocationMode" checked={allocationMode === 'manual'} onChange={() => setAllocationMode('manual')} />
+                  Escolher destino
+                </label>
+                {allocationMode === 'manual' ? (
+                  <select
+                    className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm shadow-[0_10px_30px_rgba(11,19,36,0.06)] focus:outline-none focus:ring-2 focus:ring-[#C2A14D]/40"
+                    value={manualDestination}
+                    onChange={(e) => setManualDestination(e.target.value)}
+                  >
+                    <option value="reserva">Reserva de emergência</option>
+                    {goals
+                      .filter((g) => g.is_active)
+                      .map((g) => (
+                        <option key={g.id} value={`meta:${g.id}`}>
+                          {g.name}
+                        </option>
+                      ))}
+                  </select>
+                ) : (
+                  <div className="text-[11px] text-[#6B7280]">Usa Reserva + Metas, conforme percentuais em Configurações.</div>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs text-[#6B7280] mb-1">Valor do ouro guardado (opcional)</label>
+              <input
+                className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm shadow-[0_10px_30px_rgba(11,19,36,0.06)] focus:outline-none focus:ring-2 focus:ring-[#C2A14D]/40"
+                type="number"
+                step="0.01"
+                placeholder={computedSavings > 0 ? fmt(computedSavings) : 'Ex.: 350'}
+                value={savingsOverride}
+                onChange={(e) => setSavingsOverride(e.target.value === '' ? '' : Number(e.target.value))}
+              />
+            </div>
+
             {/* PRÉVIA (com barras, bem Arkádion) */}
             <div className="rounded-2xl border border-[#E4E1D6] bg-white p-4 shadow-[0_10px_30px_rgba(11,19,36,0.06)]">
               <div className="flex items-center justify-between">
                 <div className="text-xs text-[#6B7280]">Prévia</div>
-                <Pill variant="gold">{(effectivePercent * 100).toFixed(1)}%</Pill>
+                <Pill variant="gold">{(previewPercent * 100).toFixed(1)}%</Pill>
               </div>
 
               <div className="mt-2 text-sm text-[#111827]">
@@ -557,7 +734,7 @@ export default function Incomes() {
 
               <div className="mt-3">
                 <div className="h-2 w-full rounded-full bg-[#E7E1D4] overflow-hidden">
-                  <div className="h-full bg-[#C2A14D]" style={{ width: `${Math.min(100, Math.max(0, effectivePercent * 100))}%` }} />
+                  <div className="h-full bg-[#C2A14D]" style={{ width: `${Math.min(100, Math.max(0, previewPercent * 100))}%` }} />
                 </div>
                 <div className="mt-2 text-[11px] text-[#6B7280]">
                   Dica: 0.10 = 10% (primeiro você paga a si mesmo).
@@ -582,7 +759,7 @@ export default function Incomes() {
         {/* TABELA + RECENTES */}
         <Card
           title={`Rendas de ${String(filterMonth).padStart(2, '0')}/${filterYear}`}
-          subtitle="Detalhamento do ouro guardado por entrada."
+          subtitle="Detalhamento do ouro guardado e destino por entrada."
           right={<Pill>{rows.length} item(ns)</Pill>}
           className="lg:col-span-8"
         >
@@ -597,6 +774,7 @@ export default function Incomes() {
                     <th className="py-2 pr-3">Valor</th>
                     <th className="py-2 pr-3">%</th>
                     <th className="py-2 pr-3">Ouro</th>
+                    <th className="py-2 pr-3">Destino</th>
                     <th className="py-2 pr-3">Disponível</th>
                     <th className="py-2 pr-3">Modo</th>
                     <th className="py-2 pr-0 text-right">Ações</th>
@@ -615,6 +793,11 @@ export default function Incomes() {
                       <td className="py-2 pr-3 font-medium text-[#111827]">{fmt(r.amount)}</td>
                       <td className="py-2 pr-3 text-[#111827]">{(r.used_percent * 100).toFixed(1)}%</td>
                       <td className="py-2 pr-3 text-[#111827]">{fmt(r.savings_amount)}</td>
+                      <td className="py-2 pr-3 text-[#111827]">
+                        <span className="text-xs rounded-full border px-2 py-0.5 bg-white text-[#374151] border-[#E4E1D6]">
+                          {destMap[r.id] || '—'}
+                        </span>
+                      </td>
                       <td className="py-2 pr-3 text-[#111827]">{fmt(r.available_amount)}</td>
                       <td className="py-2 pr-3">
                         <span
