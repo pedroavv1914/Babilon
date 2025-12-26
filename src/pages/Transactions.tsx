@@ -6,12 +6,14 @@ import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
 
 type Category = { id: number; name: string }
 type Alert = { id: number; type: string; severity: string; message: string; created_at: string }
-type TransactionKind = 'despesa' | 'aporte_reserva' | 'pagamento_cartao'
-type TxRow = { id: number; amount: number; kind: TransactionKind; occurred_at: string; category_id: number | null }
+type TransactionKind = 'despesa' | 'aporte_reserva' | 'aporte_meta' | 'pagamento_cartao'
+type TxRow = { id: number; amount: number; kind: TransactionKind; occurred_at: string; category_id: number | null; goal_id: number | null }
 type BudgetRow = { category_id: number; limit_amount: number }
+type GoalLite = { id: number; name: string }
 
 export default function Transactions() {
   const [categories, setCategories] = useState<Category[]>([])
+  const [goals, setGoals] = useState<GoalLite[]>([])
   const [categoryId, setCategoryId] = useState<number | null>(null)
   const [amount, setAmount] = useState<number>(0)
   const [kind, setKind] = useState<TransactionKind>('despesa')
@@ -39,6 +41,12 @@ export default function Transactions() {
     return map
   }, [categories])
 
+  const goalNameById = useMemo(() => {
+    const map: Record<number, string> = {}
+    for (const g of goals) map[Number(g.id)] = g.name
+    return map
+  }, [goals])
+
   const budgetLimitByCategoryId = useMemo(() => {
     const map: Record<number, number> = {}
     for (const b of budgets) map[Number(b.category_id)] = Number(b.limit_amount ?? 0)
@@ -62,8 +70,10 @@ export default function Transactions() {
   const totals = useMemo(() => {
     const expenseTotal = items.reduce((acc, t) => acc + (t.kind === 'despesa' ? Number(t.amount ?? 0) : 0), 0)
     const reserveTotal = items.reduce((acc, t) => acc + (t.kind === 'aporte_reserva' ? Number(t.amount ?? 0) : 0), 0)
+    const goalsTotal = items.reduce((acc, t) => acc + (t.kind === 'aporte_meta' ? Number(t.amount ?? 0) : 0), 0)
     const cardPaymentTotal = items.reduce((acc, t) => acc + (t.kind === 'pagamento_cartao' ? Number(t.amount ?? 0) : 0), 0)
-    const total = expenseTotal + reserveTotal + cardPaymentTotal
+    const savingsTotal = reserveTotal + goalsTotal
+    const total = expenseTotal + savingsTotal + cardPaymentTotal
     const txCount = items.length
     const expenseCount = items.filter((t) => t.kind === 'despesa').length
     const avgExpense = expenseCount > 0 ? expenseTotal / expenseCount : 0
@@ -78,7 +88,7 @@ export default function Transactions() {
       else if (spent >= lim * 0.8) warningCount += 1
     }
 
-    return { expenseTotal, reserveTotal, cardPaymentTotal, total, txCount, avgExpense, warningCount, criticalCount }
+    return { expenseTotal, reserveTotal, goalsTotal, savingsTotal, cardPaymentTotal, total, txCount, avgExpense, warningCount, criticalCount }
   }, [budgetLimitByCategoryId, items, spentByCategoryId])
 
   const expenseRows = useMemo(() => {
@@ -148,6 +158,11 @@ export default function Transactions() {
       if (seq !== loadSeq.current) return
       setCategories((cats || []).map((c: any) => ({ id: Number(c.id), name: String(c.name) })))
 
+      const { data: gs, error: goalsError } = await supabase.from('saving_goals').select('id,name').eq('user_id', uid).order('created_at', { ascending: false })
+      if (goalsError) throw goalsError
+      if (seq !== loadSeq.current) return
+      setGoals((gs || []).map((g: any) => ({ id: Number(g.id), name: String(g.name ?? '') })))
+
       const { data: budgetRows, error: budgetsError } = await supabase
         .from('budgets')
         .select('category_id,limit_amount')
@@ -162,7 +177,7 @@ export default function Transactions() {
       const endISO = new Date(Date.UTC(filterYear, filterMonth, 1)).toISOString()
       const { data: tx, error: txError } = await supabase
         .from('transactions')
-        .select('id,amount,kind,occurred_at,category_id')
+        .select('id,amount,kind,occurred_at,category_id,goal_id')
         .eq('user_id', uid)
         .gte('occurred_at', startISO)
         .lt('occurred_at', endISO)
@@ -178,11 +193,14 @@ export default function Transactions() {
           kind:
             t.kind === 'aporte_reserva'
               ? 'aporte_reserva'
+              : t.kind === 'aporte_meta'
+                ? 'aporte_meta'
               : t.kind === 'pagamento_cartao'
                 ? 'pagamento_cartao'
                 : 'despesa',
           occurred_at: String(t.occurred_at ?? ''),
           category_id: t.category_id === null || t.category_id === undefined ? null : Number(t.category_id),
+          goal_id: t.goal_id === null || t.goal_id === undefined ? null : Number(t.goal_id),
         }))
       )
       setDataMonth(filterMonth)
@@ -306,6 +324,7 @@ export default function Transactions() {
                 <Pill variant="sky">Mês: {monthLabel}</Pill>
                 <Pill variant="gold">Gastos: {fmt.format(totals.expenseTotal)}</Pill>
                 <Pill>Reserva: {fmt.format(totals.reserveTotal)}</Pill>
+                <Pill>Metas: {fmt.format(totals.goalsTotal)}</Pill>
                 <Pill>Cartão: {fmt.format(totals.cardPaymentTotal)}</Pill>
                 <Pill>Itens: {totals.txCount}</Pill>
                 {isUpdating ? <Pill>Atualizando…</Pill> : null}
@@ -358,7 +377,7 @@ export default function Transactions() {
 
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <WideKpi title="Despesas" value={fmt.format(totals.expenseTotal)} subtitle="Total do mês" tone={totals.criticalCount > 0 ? 'bad' : totals.warningCount > 0 ? 'warn' : 'neutral'} />
-        <WideKpi title="Aportes" value={fmt.format(totals.reserveTotal)} subtitle="Reserva de emergência" tone="ok" />
+        <WideKpi title="Aportes" value={fmt.format(totals.savingsTotal)} subtitle="Reserva + metas" tone="ok" />
         <WideKpi title="Total" value={fmt.format(totals.total)} subtitle="Somatório geral" />
         <WideKpi title="Média (despesa)" value={fmt.format(totals.avgExpense)} subtitle="Por transação" />
         <WideKpi title="Alertas" value={String(alerts.length)} subtitle="Últimos eventos" tone={alerts.some((a) => a.severity === 'critical') ? 'bad' : alerts.length > 0 ? 'warn' : 'neutral'} />
@@ -436,7 +455,14 @@ export default function Transactions() {
             <div className="rounded-xl border border-[#E4E1D6] bg-white p-3">
               <div className="text-xs text-[#6B7280]">Resumo</div>
               <div className="mt-1 text-sm text-[#111827]">
-                {kind === 'despesa' ? 'Despesa' : kind === 'aporte_reserva' ? 'Aporte' : 'Pagamento de Cartão'} de {fmt.format(Math.max(0, amount))}{' '}
+                {kind === 'despesa'
+                  ? 'Despesa'
+                  : kind === 'aporte_reserva'
+                    ? 'Aporte'
+                    : kind === 'aporte_meta'
+                      ? 'Meta'
+                      : 'Pagamento de Cartão'}{' '}
+                de {fmt.format(Math.max(0, amount))}{' '}
                 {selectedCategoryName && kind === 'despesa' ? `em ${selectedCategoryName}` : ''}
               </div>
               {kind === 'despesa' && categoryId && selectedBudgetLimit > 0 ? (
@@ -471,17 +497,18 @@ export default function Transactions() {
           <div className="mt-3 h-[2px] w-16 rounded-full bg-[#C2A14D]" />
 
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            <select
-              className="rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
-              value={listKind}
-              onChange={(e) => setListKind(e.target.value as any)}
-              disabled={loading}
-            >
-              <option value="all">Todos os tipos</option>
-              <option value="despesa">Somente despesas</option>
-              <option value="aporte_reserva">Somente aportes</option>
-              <option value="pagamento_cartao">Somente pagamentos de cartão</option>
-            </select>
+              <select
+                className="rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
+                value={listKind}
+                onChange={(e) => setListKind(e.target.value as any)}
+                disabled={loading}
+              >
+                <option value="all">Todos os tipos</option>
+                <option value="despesa">Somente despesas</option>
+                <option value="aporte_reserva">Somente aportes</option>
+                <option value="aporte_meta">Somente metas</option>
+                <option value="pagamento_cartao">Somente pagamentos de cartão</option>
+              </select>
             <select
               className="rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
               value={listCategoryId ?? ''}
@@ -516,10 +543,17 @@ export default function Transactions() {
           ) : (
             <ul className="mt-4 space-y-3">
               {filteredItems.slice(0, 30).map((t) => {
-                const cat = t.category_id ? categoryNameById[Number(t.category_id)] ?? 'Categoria' : 'Sem categoria'
+                const cat =
+                  t.kind === 'aporte_meta'
+                    ? goalNameById[Number(t.goal_id ?? 0)] ?? 'Meta'
+                    : t.category_id
+                      ? categoryNameById[Number(t.category_id)] ?? 'Categoria'
+                      : 'Sem categoria'
                 const badge =
                   t.kind === 'aporte_reserva'
                     ? 'bg-[#E6F6FE] text-[#0B5E86] border-[#0EA5E9]/30'
+                    : t.kind === 'aporte_meta'
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
                     : t.kind === 'pagamento_cartao'
                       ? 'bg-[#EEF2FF] text-[#3730A3] border-[#6366F1]/30'
                       : 'bg-[#F5F2EB] text-[#5A4A1A] border-[#C2A14D]/40'
@@ -531,7 +565,13 @@ export default function Transactions() {
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className={`text-[11px] rounded-full border px-2 py-0.5 ${badge}`}>
-                            {t.kind === 'aporte_reserva' ? 'aporte' : t.kind === 'pagamento_cartao' ? 'cartão' : 'despesa'}
+                            {t.kind === 'aporte_reserva'
+                              ? 'aporte'
+                              : t.kind === 'aporte_meta'
+                                ? 'meta'
+                                : t.kind === 'pagamento_cartao'
+                                  ? 'cartão'
+                                  : 'despesa'}
                           </span>
                           <span className="text-[11px] text-[#6B7280]">{dateLabel}</span>
                         </div>
