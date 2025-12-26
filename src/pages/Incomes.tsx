@@ -3,8 +3,9 @@ import { supabase } from '../lib/supabaseClient'
 import { getUserId } from '../lib/auth'
 
 type Income = { id: number; amount: number; month: number; year: number; rule_percent: number | null; created_at: string }
-type UserSettings = { pay_percent: number }
-type Allocation = { income_id: number; amount: number }
+type UserSettings = { pay_percent: number; reserve_percent: number }
+type SavingGoal = { id: number; name: string; allocation_percent: number; is_active: boolean }
+type TxRow = { amount: number; occurred_at: string; kind: string; goal_id: number | null }
 type DeleteTarget = { id: number; amount: number }
 
 export default function Incomes() {
@@ -13,7 +14,7 @@ export default function Incomes() {
   const [settings, setSettings] = useState<UserSettings | null>(null)
   const [items, setItems] = useState<Income[]>([])
   const [recent, setRecent] = useState<Income[]>([])
-  const [allocMap, setAllocMap] = useState<Record<number, number>>({})
+  const [savedMap, setSavedMap] = useState<Record<number, number>>({})
 
   const [amount, setAmount] = useState<number>(0)
   const [filterMonth, setFilterMonth] = useState<number>(now.getMonth() + 1)
@@ -42,7 +43,7 @@ export default function Incomes() {
   const rows = useMemo(() => {
     return items.map((r) => {
       const usedPercent = typeof r.rule_percent === 'number' ? r.rule_percent : defaultPercent
-      const alloc = typeof allocMap[r.id] === 'number' ? allocMap[r.id] : r.amount * usedPercent
+      const alloc = typeof savedMap[r.id] === 'number' ? savedMap[r.id] : r.amount * usedPercent
       const available = r.amount - alloc
       return {
         ...r,
@@ -52,7 +53,7 @@ export default function Incomes() {
         mode: typeof r.rule_percent === 'number' ? 'custom' : 'default',
       }
     })
-  }, [items, allocMap, defaultPercent])
+  }, [items, savedMap, defaultPercent])
 
   const totals = useMemo(() => {
     const incomeTotal = rows.reduce((acc, r) => acc + Number(r.amount ?? 0), 0)
@@ -67,8 +68,11 @@ export default function Incomes() {
     setError(null)
     setLoading(true)
     try {
-      const [{ data: s, error: sErr }, { data: monthData, error: mErr }, { data: recData, error: rErr }] = await Promise.all([
-        supabase.from('user_settings').select('pay_percent').eq('user_id', uid).maybeSingle(),
+      const startISO = new Date(Date.UTC(filterYear, filterMonth - 1, 1)).toISOString()
+      const endISO = new Date(Date.UTC(filterYear, filterMonth, 1)).toISOString()
+      const [{ data: s, error: sErr }, { data: monthData, error: mErr }, { data: recData, error: rErr }, { data: tx, error: tErr }] =
+        await Promise.all([
+        supabase.from('user_settings').select('pay_percent,reserve_percent').eq('user_id', uid).maybeSingle(),
         supabase
           .from('incomes')
           .select('id,amount,month,year,rule_percent,created_at')
@@ -82,35 +86,42 @@ export default function Incomes() {
           .eq('user_id', uid)
           .order('created_at', { ascending: false })
           .limit(12),
+        supabase
+          .from('transactions')
+          .select('amount,occurred_at,kind,goal_id')
+          .eq('user_id', uid)
+          .gte('occurred_at', startISO)
+          .lt('occurred_at', endISO)
+          .in('kind', ['aporte_reserva', 'aporte_meta']),
       ])
 
       if (sErr) throw sErr
       if (mErr) throw mErr
       if (rErr) throw rErr
+      if (tErr) throw tErr
 
-      setSettings(s ? { pay_percent: Number((s as any).pay_percent ?? 0.1) } : { pay_percent: 0.1 })
+      const payPercent = s ? Number((s as any).pay_percent ?? 0.1) : 0.1
+      const reservePercent =
+        s && (s as any).reserve_percent !== null && (s as any).reserve_percent !== undefined ? Number((s as any).reserve_percent) : payPercent
+      setSettings({ pay_percent: payPercent, reserve_percent: reservePercent })
       const monthItems = (monthData || []) as Income[]
       setItems(monthItems)
       setRecent((recData || []) as Income[])
 
-      const ids = monthItems.map((i) => i.id).filter((v) => typeof v === 'number')
-      if (!ids.length) {
-        setAllocMap({})
-        return
+      const byOccurredAt: Record<string, number> = {}
+      for (const t of (tx || []) as TxRow[]) {
+        const key = String((t as any).occurred_at ?? '')
+        if (!key) continue
+        byOccurredAt[key] = (byOccurredAt[key] ?? 0) + Number((t as any).amount ?? 0)
       }
-
-      const { data: al, error: alErr } = await supabase
-        .from('savings_allocations')
-        .select('income_id,amount')
-        .eq('user_id', uid)
-        .in('income_id', ids)
-      if (alErr) throw alErr
-
       const map: Record<number, number> = {}
-      for (const a of (al || []) as Allocation[]) {
-        map[Number(a.income_id)] = Number((a as any).amount ?? 0)
+      for (const inc of monthItems) {
+        const key = String((inc as any).created_at ?? '')
+        if (!key) continue
+        const v = byOccurredAt[key]
+        if (typeof v === 'number') map[Number(inc.id)] = Number(v ?? 0)
       }
-      setAllocMap(map)
+      setSavedMap(map)
     } catch (e: any) {
       setError(typeof e?.message === 'string' ? e.message : 'Erro ao carregar rendas')
     } finally {
@@ -143,8 +154,8 @@ export default function Incomes() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'user_settings' }, () => load())
       .subscribe()
     const ch3 = supabase
-      .channel('savings_allocations')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'savings_allocations' }, () => load())
+      .channel('transactions')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => load())
       .subscribe()
     return () => {
       supabase.removeChannel(ch1)
@@ -161,11 +172,13 @@ export default function Incomes() {
       setError('Informe um valor maior que zero')
       return
     }
-    const dt = new Date(`${incomeDate}T12:00:00`)
-    if (Number.isNaN(dt.getTime())) {
+    const baseDt = new Date(`${incomeDate}T12:00:00`)
+    if (Number.isNaN(baseDt.getTime())) {
       setError('Informe uma data válida')
       return
     }
+    const dt = new Date(baseDt.getTime() + (Date.now() % 1000))
+    const dtISO = dt.toISOString()
     const month = dt.getMonth() + 1
     const year = dt.getFullYear()
     if (month < 1 || month > 12 || year < 2000 || year > 3000) {
@@ -193,7 +206,7 @@ export default function Incomes() {
         month,
         year,
         rule_percent: percentMode === 'custom' ? Number(rulePercent) : null,
-        created_at: dt.toISOString(),
+        created_at: dtISO,
       })
       .select('id')
       .single()
@@ -203,12 +216,56 @@ export default function Incomes() {
     }
 
     if (Number.isFinite(savingsAmount) && savingsAmount > 0) {
-      const { error: txErr } = await supabase
-        .from('transactions')
-        .insert({ user_id: uid, amount: savingsAmount, kind: 'aporte_reserva', occurred_at: dt.toISOString() })
-      if (txErr) {
+      try {
+        const [{ data: s, error: sErr }, { data: g, error: gErr }] = await Promise.all([
+          supabase.from('user_settings').select('pay_percent,reserve_percent').eq('user_id', uid).maybeSingle(),
+          supabase.from('saving_goals').select('id,name,allocation_percent,is_active').eq('user_id', uid).eq('is_active', true),
+        ])
+        if (sErr) throw sErr
+        if (gErr) throw gErr
+
+        const payPercent = s ? Number((s as any).pay_percent ?? usedPercent) : usedPercent
+        const reservePercent =
+          s && (s as any).reserve_percent !== null && (s as any).reserve_percent !== undefined ? Number((s as any).reserve_percent) : payPercent
+        const goals = ((g || []) as any[]).map(
+          (row): SavingGoal => ({
+            id: Number(row?.id ?? 0),
+            name: String(row?.name ?? ''),
+            allocation_percent: Number(row?.allocation_percent ?? 0),
+            is_active: Boolean(row?.is_active ?? true),
+          })
+        )
+
+        const activeGoals = goals.filter((gg) => gg.is_active && Number(gg.allocation_percent ?? 0) > 0)
+        const totalPercent = Math.max(0, Number(usedPercent ?? 0))
+
+        const txPayload: any[] = []
+        const base = Math.max(0, Number(payPercent ?? 0))
+        const scale = base > 0 ? totalPercent / base : 0
+
+        if (base <= 0 || scale <= 0) {
+          txPayload.push({ user_id: uid, amount: savingsAmount, kind: 'aporte_reserva', occurred_at: dtISO })
+        } else {
+          const reserveAmount = Math.max(0, Number(amount ?? 0)) * Math.max(0, Number(reservePercent ?? 0)) * scale
+          if (Number.isFinite(reserveAmount) && reserveAmount > 0) {
+            txPayload.push({ user_id: uid, amount: reserveAmount, kind: 'aporte_reserva', occurred_at: dtISO })
+          }
+          for (const gg of activeGoals) {
+            const ga = Math.max(0, Number(amount ?? 0)) * Math.max(0, Number(gg.allocation_percent ?? 0)) * scale
+            if (Number.isFinite(ga) && ga > 0) {
+              txPayload.push({ user_id: uid, amount: ga, kind: 'aporte_meta', goal_id: gg.id, occurred_at: dtISO })
+            }
+          }
+        }
+
+        if (txPayload.length) {
+          const { error: txErr } = await supabase.from('transactions').insert(txPayload)
+          if (txErr) throw txErr
+        }
+      } catch (e: any) {
+        await supabase.from('transactions').delete().match({ user_id: uid, occurred_at: dtISO }).in('kind', ['aporte_reserva', 'aporte_meta'])
         await supabase.from('incomes').delete().match({ id: Number((createdIncome as any)?.id), user_id: uid })
-        setError(txErr.message)
+        setError(typeof e?.message === 'string' ? e.message : 'Erro ao registrar aportes.')
         return
       }
     }
@@ -237,12 +294,8 @@ export default function Incomes() {
         await supabase
           .from('transactions')
           .delete()
-          .match({
-            user_id: uid,
-            kind: 'aporte_reserva',
-            amount: Number(target.savings_amount ?? 0),
-            occurred_at: String(target.created_at ?? ''),
-          })
+          .match({ user_id: uid, occurred_at: String(target.created_at ?? '') })
+          .in('kind', ['aporte_reserva', 'aporte_meta'])
       }
       const { error } = await supabase.from('incomes').delete().eq('id', deleteTarget.id).eq('user_id', uid)
       if (error) throw error
