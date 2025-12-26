@@ -14,12 +14,14 @@ type SavingGoal = {
   is_active: boolean
   created_at: string
 }
+type GoalTx = { goal_id: number | null; amount: number }
 
 export default function Settings() {
   const [settings, setSettings] = useState<UserSettings | null>(null)
   const [reserve, setReserve] = useState<Reserve | null>(null)
   const [expenseHistory, setExpenseHistory] = useState<MonthlyExpense[]>([])
   const [goals, setGoals] = useState<SavingGoal[]>([])
+  const [goalSavedById, setGoalSavedById] = useState<Record<number, number>>({})
   const [deletedGoalIds, setDeletedGoalIds] = useState<number[]>([])
   const [newGoalName, setNewGoalName] = useState('')
   const [newGoalTarget, setNewGoalTarget] = useState<number | ''>('')
@@ -45,7 +47,13 @@ export default function Settings() {
       if (!uid) return
       if (seq !== loadSeq.current) return
 
-      const [{ data: s, error: sErr }, { data: r, error: rErr }, { data: h, error: hErr }, { data: g, error: gErr }] =
+      const [
+        { data: s, error: sErr },
+        { data: r, error: rErr },
+        { data: h, error: hErr },
+        { data: g, error: gErr },
+        { data: tx, error: txErr },
+      ] =
         await Promise.all([
           supabase.from('user_settings').select('user_id,pay_percent,reserve_percent,emergency_months').eq('user_id', uid).maybeSingle(),
         supabase.from('emergency_reserve').select('user_id,target_months,target_amount,current_amount').eq('user_id', uid).maybeSingle(),
@@ -61,11 +69,19 @@ export default function Settings() {
           .select('id,user_id,name,target_amount,allocation_percent,is_active,created_at')
           .eq('user_id', uid)
           .order('created_at', { ascending: false }),
+        supabase
+          .from('transactions')
+          .select('goal_id,amount')
+          .eq('user_id', uid)
+          .eq('kind', 'aporte_meta')
+          .not('goal_id', 'is', null)
+          .limit(5000),
         ])
       if (sErr) throw sErr
       if (rErr) throw rErr
       if (hErr) throw hErr
       if (gErr) throw gErr
+      if (txErr) throw txErr
       if (seq !== loadSeq.current) return
 
       const pay = s ? Number((s as any).pay_percent ?? 0.1) : 0.1
@@ -113,6 +129,13 @@ export default function Settings() {
           created_at: String(row?.created_at ?? ''),
         }))
       )
+      const goalMap: Record<number, number> = {}
+      for (const t of (tx || []) as GoalTx[]) {
+        const gid = Number((t as any).goal_id ?? 0)
+        if (!gid) continue
+        goalMap[gid] = (goalMap[gid] ?? 0) + Math.max(0, Number((t as any).amount ?? 0))
+      }
+      setGoalSavedById(goalMap)
       setDeletedGoalIds([])
     } catch (e: any) {
       if (seq !== loadSeq.current) return
@@ -265,6 +288,7 @@ export default function Settings() {
   const activeGoalsSum = useMemo(() => goals.filter((g) => g.is_active).reduce((acc, g) => acc + Math.max(0, Number(g.allocation_percent ?? 0)), 0), [goals])
   const allocationSum = reservePercent + activeGoalsSum
   const allocationLeft = Math.max(0, payPercent - allocationSum)
+  const goalsSavedTotal = useMemo(() => Object.values(goalSavedById).reduce((acc, v) => acc + Math.max(0, Number(v ?? 0)), 0), [goalSavedById])
   const reserveCurrent = Math.max(0, Number(reserve?.current_amount ?? 0))
   const reserveTarget =
     reserve?.target_amount === null || reserve?.target_amount === undefined ? null : Math.max(0, Number(reserve.target_amount))
@@ -601,12 +625,55 @@ export default function Settings() {
 
         <div className="mt-3 h-[2px] w-16 rounded-full bg-[#C2A14D]" />
 
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <Pill variant="sky">Guardado em metas: {fmt.format(goalsSavedTotal)}</Pill>
+          <Pill variant="neutral">Metas: {(activeGoalsSum * 100).toFixed(1)}%</Pill>
+          <Pill variant="neutral">Reserva: {(reservePercent * 100).toFixed(1)}%</Pill>
+        </div>
+
         {goals.length === 0 ? (
           <div className="mt-4 text-sm text-[#6B7280]">Nenhuma meta cadastrada ainda.</div>
         ) : (
           <div className="mt-4 space-y-3">
             {goals.map((g) => (
               <div key={g.id} className="rounded-2xl border border-[#E4E1D6] bg-white p-4 shadow-[0_10px_30px_rgba(11,19,36,0.06)]">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="text-xs text-[#6B7280]">
+                    Guardado: <span className="font-medium text-[#111827]">{fmt.format(Math.max(0, Number(goalSavedById[g.id] ?? 0)))}</span>
+                  </div>
+                  {g.target_amount ? (
+                    <div className="text-xs text-[#6B7280]">
+                      Progresso:{' '}
+                      <span className="font-medium text-[#111827]">
+                        {Math.round(
+                          Math.min(
+                            1,
+                            Math.max(0, Number(goalSavedById[g.id] ?? 0)) / Math.max(1e-9, Number(g.target_amount ?? 0))
+                          ) * 100
+                        )}
+                        %
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
+
+                {g.target_amount ? (
+                  <div className="mt-3 h-2 w-full rounded-full bg-[#E7E1D4] overflow-hidden">
+                    <div
+                      className="h-full bg-emerald-500"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.max(
+                            0,
+                            (Math.max(0, Number(goalSavedById[g.id] ?? 0)) / Math.max(1e-9, Number(g.target_amount ?? 0))) * 100
+                          )
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                ) : null}
+
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
                   <div className="md:col-span-4">
                     <label className="block text-xs text-[#6B7280] mb-1">Nome</label>
