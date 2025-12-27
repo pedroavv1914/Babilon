@@ -50,6 +50,7 @@ export default function Settings() {
       const [
         { data: s, error: sErr },
         { data: r, error: rErr },
+        { data: reserveTx, error: reserveTxErr },
         { data: h, error: hErr },
         { data: g, error: gErr },
         { data: tx, error: txErr },
@@ -57,6 +58,7 @@ export default function Settings() {
         await Promise.all([
           supabase.from('user_settings').select('user_id,pay_percent,reserve_percent,emergency_months').eq('user_id', uid).maybeSingle(),
         supabase.from('emergency_reserve').select('user_id,target_months,target_amount,current_amount').eq('user_id', uid).maybeSingle(),
+        supabase.from('transactions').select('amount').eq('user_id', uid).eq('kind', 'aporte_reserva').limit(10000),
         supabase
           .from('vw_monthly_summary')
           .select('month,year,expenses_amount')
@@ -79,6 +81,7 @@ export default function Settings() {
         ])
       if (sErr) throw sErr
       if (rErr) throw rErr
+      if (reserveTxErr) throw reserveTxErr
       if (hErr) throw hErr
       if (gErr) throw gErr
       if (txErr) throw txErr
@@ -99,15 +102,26 @@ export default function Settings() {
           : { user_id: uid, pay_percent: 0.1, reserve_percent: 0.1, emergency_months: 6 }
       )
       setReserve(
-        r
-          ? {
-              user_id: String((r as any).user_id ?? uid),
-              target_months: Number((r as any).target_months ?? 6),
-              target_amount:
-                (r as any).target_amount === null || (r as any).target_amount === undefined ? null : Number((r as any).target_amount),
-              current_amount: Number((r as any).current_amount ?? 0),
-            }
-          : { user_id: uid, target_months: 6, target_amount: null, current_amount: 0 }
+        (() => {
+          const reserveCurrentFromTx = Math.max(
+            0,
+            (reserveTx || []).reduce((acc: number, row: any) => acc + Math.max(0, Number(row?.amount ?? 0)), 0)
+          )
+          const out: Reserve = r
+            ? {
+                user_id: String((r as any).user_id ?? uid),
+                target_months: Number((r as any).target_months ?? 6),
+                target_amount:
+                  (r as any).target_amount === null || (r as any).target_amount === undefined ? null : Number((r as any).target_amount),
+                current_amount: reserveCurrentFromTx,
+              }
+            : { user_id: uid, target_months: 6, target_amount: null, current_amount: reserveCurrentFromTx }
+          const dbCurrent = Math.max(0, Number((r as any)?.current_amount ?? 0))
+          if (Math.abs(dbCurrent - reserveCurrentFromTx) > 0.005) {
+            supabase.from('emergency_reserve').upsert({ user_id: uid, current_amount: reserveCurrentFromTx }, { onConflict: 'user_id' })
+          }
+          return out
+        })()
       )
 
       setExpenseHistory(
@@ -152,6 +166,7 @@ export default function Settings() {
       .channel('planning')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'user_settings' }, () => load())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'emergency_reserve' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => load())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'saving_goals' }, () => load())
       .subscribe()
     return () => {
