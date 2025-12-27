@@ -72,7 +72,6 @@ export default function Incomes() {
 
   async function load() {
     if (!uid) return
-    setError(null)
     setLoading(true)
     try {
       const startISO = new Date(Date.UTC(filterYear, filterMonth - 1, 1)).toISOString()
@@ -313,11 +312,30 @@ export default function Incomes() {
       const formatTxError = (message: string) => {
         const msg = String(message ?? '').trim()
         const lower = msg.toLowerCase()
+        const needsMigration =
+          (lower.includes('aporte_meta') && lower.includes('enum') && lower.includes('transaction_kind')) ||
+          (lower.includes('invalid') && lower.includes('enum') && lower.includes('aporte_meta')) ||
+          (lower.includes('goal_id') && (lower.includes('does not exist') || lower.includes('não existe') || lower.includes('schema cache'))) ||
+          (lower.includes('income_id') && (lower.includes('does not exist') || lower.includes('não existe') || lower.includes('schema cache'))) ||
+          (lower.includes('transaction_kind') && lower.includes('aporte_meta') && lower.includes('schema cache')) ||
+          lower.includes('transactions_kind_check')
+        if (needsMigration) {
+          return 'Seu banco ainda não está com suporte completo a metas (aporte_meta/goal_id/income_id). Rode a migração 011_saving_goals.sql no Supabase (SQL Editor) e tente novamente.'
+        }
         if (lower.includes('enum') && lower.includes('transaction_kind') && lower.includes('aporte_meta')) {
           return 'Seu banco ainda não suporta o tipo "aporte_meta". Rode a migração 011_saving_goals.sql no Supabase (SQL Editor) para adicionar esse tipo.'
         }
         if (lower.includes('column') && lower.includes('goal_id') && (lower.includes('does not exist') || lower.includes('não existe'))) {
           return 'Seu banco ainda não tem a coluna goal_id em transactions. Rode a migração 011_saving_goals.sql no Supabase (SQL Editor).'
+        }
+        if (lower.includes('foreign key') && lower.includes('goal')) {
+          return 'A meta selecionada não foi encontrada. Recarregue a página e selecione uma meta válida.'
+        }
+        if (lower.includes('violates') && lower.includes('check') && lower.includes('transactions_goal_requires_kind')) {
+          return 'A transação da meta foi rejeitada (regra goal_id/kind). Rode a migração 011_saving_goals.sql e tente novamente.'
+        }
+        if (lower.includes('violates') && lower.includes('check') && lower.includes('transactions_kind_check')) {
+          return 'Seu banco não permite o tipo de transação "aporte_meta" (constraint transactions_kind_check). Rode a migração 011_saving_goals.sql no Supabase (SQL Editor) e tente novamente.'
         }
         return msg || 'Erro ao registrar aportes.'
       }
