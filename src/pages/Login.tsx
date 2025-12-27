@@ -21,7 +21,7 @@ export default function Login() {
       const msg = String(error.message || '')
       const lower = msg.toLowerCase()
       if (lower.includes('email not confirmed')) {
-        setError('Confirme seu e-mail antes de entrar.')
+        setError('Confirme seu e-mail antes de entrar. Verifique sua caixa de entrada e spam.')
       } else if (lower.includes('invalid login credentials')) {
         setError('E-mail ou senha incorretos. Verifique os dados e tente novamente.')
       } else if (lower.includes('invalid') && (lower.includes('password') || lower.includes('credentials'))) {
@@ -46,7 +46,7 @@ export default function Login() {
       const redirectTo = `${window.location.origin}/reset-password`
       const { error } = await supabase.auth.resetPasswordForEmail(safeEmail, { redirectTo })
       if (error) throw error
-      setError('Se o e-mail existir, enviaremos um link de recuperação.')
+      setError('Se o e-mail existir, enviaremos um link de recuperação. Verifique sua caixa de entrada e spam.')
     } catch (e: any) {
       setError(typeof e?.message === 'string' ? e.message : 'Erro ao solicitar recuperação de senha.')
     } finally {
