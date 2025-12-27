@@ -11,6 +11,8 @@ export default function Register() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [pendingEmail, setPendingEmail] = useState<string | null>(null)
+  const [needsEmailConfirm, setNeedsEmailConfirm] = useState(false)
 
   const canSubmit = useMemo(() => {
     return name.trim().length >= 2 && email.trim().length > 3 && password.length >= 8 && agree && !loading
@@ -37,6 +39,8 @@ export default function Register() {
     setLoading(true)
     setError(null)
     setSuccess(null)
+    setPendingEmail(null)
+    setNeedsEmailConfirm(false)
 
     try {
       const safeEmail = email.trim()
@@ -58,14 +62,42 @@ export default function Register() {
 
       if (data.session) {
         setSuccess('Conta criada com sucesso. Você já pode entrar.')
+        setNeedsEmailConfirm(false)
       } else {
-        setSuccess(`Conta criada com sucesso. Enviamos um e-mail de confirmação para ${safeEmail}.`)
+        setSuccess(
+          `Conta criada com sucesso. Enviamos um e-mail de confirmação para ${safeEmail}. Verifique sua caixa de entrada e spam.`
+        )
+        setNeedsEmailConfirm(true)
       }
+      setPendingEmail(safeEmail)
       setName('')
       setEmail('')
       setPassword('')
     } catch (e: any) {
       setError(typeof e?.message === 'string' ? e.message : 'Erro ao cadastrar. Tente novamente.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleResendConfirmation() {
+    const safeEmail = String(pendingEmail ?? '').trim()
+    if (!safeEmail) return
+    setLoading(true)
+    setError(null)
+    try {
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: safeEmail,
+        options: { emailRedirectTo: `${window.location.origin}/login` },
+      })
+      if (error) {
+        setError(formatRegisterError(error.message, 'Erro ao reenviar e-mail de confirmação'))
+        return
+      }
+      setSuccess(`E-mail de confirmação reenviado para ${safeEmail}. Verifique sua caixa de entrada e spam.`)
+    } catch (e: any) {
+      setError(typeof e?.message === 'string' ? e.message : 'Erro ao reenviar e-mail de confirmação.')
     } finally {
       setLoading(false)
     }
@@ -131,7 +163,7 @@ export default function Register() {
           <div className="p-6 sm:p-8">
             <div>
               <div className="font-[ui-serif,Georgia,serif] text-2xl tracking-[-0.6px] text-[#111827]">Criar conta</div>
-              <div className="mt-1 text-xs text-[#6B7280]">Ative seu acesso por e-mail após o cadastro.</div>
+              <div className="mt-1 text-xs text-[#6B7280]">Ative seu acesso por e-mail após o cadastro (verifique o spam).</div>
               <div className="mt-4 h-[2px] w-16 rounded-full bg-[#C2A14D]" />
             </div>
 
@@ -190,7 +222,20 @@ export default function Register() {
 
               {success ? (
                 <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-                  {success}
+                  <div>{success}</div>
+                  {needsEmailConfirm && pendingEmail ? (
+                    <div className="mt-3 flex items-center justify-between gap-3">
+                      <div className="text-xs text-emerald-900/80">Não chegou? Verifique o spam/lixo eletrônico.</div>
+                      <button
+                        type="button"
+                        className="text-xs rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-emerald-800 hover:bg-emerald-50 disabled:opacity-60"
+                        onClick={handleResendConfirmation}
+                        disabled={loading}
+                      >
+                        Reenviar e-mail
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
 
