@@ -33,35 +33,33 @@ export default function Dashboard() {
         const uid = await getUserId()
         if (!uid || !mounted) return
 
-        const { data: u } = await supabase
-          .from('vw_budget_usage')
-          .select('category_name, limit_amount, spent_amount')
-          .eq('month', month)
-          .eq('year', year)
-          .eq('user_id', uid)
-
-        const { data: s } = await supabase
-          .from('vw_monthly_summary')
-          .select('*')
-          .eq('month', month)
-          .eq('year', year)
-          .eq('user_id', uid)
-          .maybeSingle()
-
-        const { data: a } = await supabase
-          .from('alerts')
-          .select('id,message,severity')
-          .eq('user_id', uid)
-          .order('created_at', { ascending: false })
-          .limit(3)
-
-        const { data: r } = await supabase
-          .from('emergency_reserve')
-          .select('current_amount,target_amount,target_months')
-          .eq('user_id', uid)
-          .maybeSingle()
-
-        const [{ data: g, error: gErr }, { data: tx, error: txErr }] = await Promise.all([
+        const [{ data: u }, { data: s }, { data: a }, { data: r }, { data: reserveTx }, { data: g, error: gErr }, { data: tx, error: txErr }] =
+          await Promise.all([
+            supabase
+              .from('vw_budget_usage')
+              .select('category_name, limit_amount, spent_amount')
+              .eq('month', month)
+              .eq('year', year)
+              .eq('user_id', uid),
+            supabase
+              .from('vw_monthly_summary')
+              .select('*')
+              .eq('month', month)
+              .eq('year', year)
+              .eq('user_id', uid)
+              .maybeSingle(),
+            supabase
+              .from('alerts')
+              .select('id,message,severity')
+              .eq('user_id', uid)
+              .order('created_at', { ascending: false })
+              .limit(3),
+            supabase
+              .from('emergency_reserve')
+              .select('target_amount,target_months')
+              .eq('user_id', uid)
+              .maybeSingle(),
+            supabase.from('transactions').select('amount').eq('user_id', uid).eq('kind', 'aporte_reserva').limit(10000),
           supabase
             .from('saving_goals')
             .select('id,name,target_amount,allocation_percent,is_active,created_at')
@@ -74,14 +72,23 @@ export default function Dashboard() {
             .eq('kind', 'aporte_meta')
             .not('goal_id', 'is', null)
             .limit(5000),
-        ])
+          ])
         if (gErr) throw gErr
         if (txErr) throw txErr
+        const reserveCurrentFromTx = Math.max(
+          0,
+          (reserveTx || []).reduce((acc: number, row: any) => acc + Math.max(0, Number(row?.amount ?? 0)), 0)
+        )
 
         setUsage(u || [])
         setSummary(s || null)
         setAlerts(a || [])
-        setReserve(r || null)
+        setReserve({
+          current_amount: reserveCurrentFromTx,
+          target_amount:
+            (r as any)?.target_amount === null || (r as any)?.target_amount === undefined ? null : Number((r as any).target_amount),
+          target_months: Number((r as any)?.target_months ?? 6),
+        })
         setGoals(
           (g || []).map((row: any) => ({
             id: Number(row?.id ?? 0),
@@ -110,6 +117,7 @@ export default function Dashboard() {
       .channel('dashboard')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => load())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'saving_goals' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'emergency_reserve' }, () => load())
       .subscribe()
 
     return () => {
@@ -336,7 +344,12 @@ export default function Dashboard() {
         {/* STATS */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Stat label="Renda do mês" value={fmt(income)} hint="Entrada total do ciclo" />
-          <Stat label="Ouro guardado" value={fmt(savings)} hint={`Taxa: ${(savingsRate * 100).toFixed(1)}%`} tone="ok" />
+          <Stat
+            label="Ouro guardado"
+            value={fmt(reserveCurrent)}
+            hint={reserveTarget ? `${Math.round((reservePct ?? 0) * 100)}% da meta` : 'Patrimônio de proteção'}
+            tone="ok"
+          />
           <Stat label="Gastos" value={fmt(expenses)} hint="Saídas registradas" tone={expenses > income ? 'warn' : 'neutral'} />
           <Stat label="Disponível" value={fmt(available)} hint={available < 0 ? 'Atenção: mês no vermelho' : 'Dentro do planejado'} tone={available < 0 ? 'bad' : 'neutral'} />
         </div>
