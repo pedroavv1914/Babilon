@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { supabase } from '../lib/supabaseClient'
 
 export default function Register() {
   const [name, setName] = useState('')
@@ -11,31 +12,22 @@ export default function Register() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
 
-  const apiUrl = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:3001'
-
   const canSubmit = useMemo(() => {
     return name.trim().length >= 2 && email.trim().length > 3 && password.length >= 8 && agree && !loading
   }, [name, email, password, agree, loading])
 
-  function formatRegisterError(status: number, data: any, fallback: string) {
-    const raw = String(data?.message ?? data?.error ?? data?.explicacao ?? data?.o_que_aconteceu ?? fallback ?? '')
-    const msg = raw.trim()
+  function formatRegisterError(message: string, fallback: string) {
+    const msg = String(message ?? '').trim()
     const lower = msg.toLowerCase()
 
-    if (lower.includes('email_already_exists') || lower.includes('already') && lower.includes('exist')) {
+    if (lower.includes('already') && (lower.includes('registered') || lower.includes('exists'))) {
       return 'Este e-mail já está cadastrado. Faça login ou recupere sua senha.'
     }
-    if (lower.includes('validation_error')) {
-      return 'Alguns dados parecem inválidos. Revise nome, e-mail e senha e tente novamente.'
-    }
-    if (lower.includes('invalid email') || lower.includes('email') && lower.includes('invalid')) {
+    if (lower.includes('invalid') && lower.includes('email')) {
       return 'E-mail inválido. Verifique o formato (ex.: voce@exemplo.com).'
     }
     if (lower.includes('password') && (lower.includes('weak') || lower.includes('minimum') || lower.includes('short'))) {
       return 'Sua senha parece fraca. Use pelo menos 8 caracteres (misture letras, números e símbolos).'
-    }
-    if (status >= 500) {
-      return 'Não foi possível criar sua conta agora. Tente novamente em alguns instantes.'
     }
     return msg || fallback
   }
@@ -47,28 +39,33 @@ export default function Register() {
     setSuccess(null)
 
     try {
-      const payload: any = { email: email.trim(), password, name: name.trim() }
+      const safeEmail = email.trim()
+      const safeName = name.trim()
 
-      const r = await fetch(`${apiUrl.replace(/\/+$/, '')}/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+      const { data, error } = await supabase.auth.signUp({
+        email: safeEmail,
+        password,
+        options: {
+          data: { name: safeName },
+          emailRedirectTo: `${window.location.origin}/login`,
+        },
       })
 
-      const data = await r.json().catch(() => null)
-
-      if (!r.ok) {
-        setError(formatRegisterError(r.status, data, 'Erro ao cadastrar'))
+      if (error) {
+        setError(formatRegisterError(error.message, 'Erro ao cadastrar'))
         return
       }
 
-      const safeEmail = email.trim()
-      setSuccess(`Conta criada com sucesso. Enviamos um e-mail de confirmação para ${safeEmail}.`)
+      if (data.session) {
+        setSuccess('Conta criada com sucesso. Você já pode entrar.')
+      } else {
+        setSuccess(`Conta criada com sucesso. Enviamos um e-mail de confirmação para ${safeEmail}.`)
+      }
       setName('')
       setEmail('')
       setPassword('')
     } catch (e: any) {
-      setError('Não foi possível conectar ao servidor para criar sua conta. Verifique sua conexão e tente novamente.')
+      setError(typeof e?.message === 'string' ? e.message : 'Erro ao cadastrar. Tente novamente.')
     } finally {
       setLoading(false)
     }
