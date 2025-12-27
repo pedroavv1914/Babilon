@@ -308,6 +308,9 @@ export default function Incomes() {
 
     if (Number.isFinite(savingsAmount) && savingsAmount > 0) {
       try {
+        const occurredAtISO = dtISO
+        const occurredAtDate = incomeDate
+
         const [{ data: s, error: sErr }, { data: g, error: gErr }] = await Promise.all([
           supabase.from('user_settings').select('pay_percent,reserve_percent').eq('user_id', uid).maybeSingle(),
           supabase.from('saving_goals').select('id,name,allocation_percent,is_active').eq('user_id', uid).eq('is_active', true),
@@ -335,39 +338,65 @@ export default function Incomes() {
         const base = Math.max(0, Number(payPercent ?? 0))
         const scale = base > 0 ? totalPercent / base : 0
 
+        const makeTx = (row: { amount: number; kind: 'aporte_reserva' | 'aporte_meta'; goal_id?: number | null; occurred_at: string }) => {
+          return {
+            user_id: uid,
+            income_id: incomeId,
+            amount: row.amount,
+            kind: row.kind,
+            occurred_at: row.occurred_at,
+            goal_id: row.goal_id ?? null,
+          }
+        }
+
         if (allocationMode === 'manual') {
           if (manualDestination.startsWith('meta:')) {
             const gid = Number(manualDestination.slice('meta:'.length))
             if (!Number.isFinite(gid) || gid <= 0) throw new Error('Selecione uma meta válida')
-            txPayload.push({ user_id: uid, income_id: incomeId, amount: savingsAmount, kind: 'aporte_meta', goal_id: gid, occurred_at: dtISO })
+            txPayload.push(makeTx({ amount: savingsAmount, kind: 'aporte_meta', goal_id: gid, occurred_at: occurredAtISO }))
           } else {
-            txPayload.push({ user_id: uid, income_id: incomeId, amount: savingsAmount, kind: 'aporte_reserva', occurred_at: dtISO })
+            txPayload.push(makeTx({ amount: savingsAmount, kind: 'aporte_reserva', occurred_at: occurredAtISO }))
           }
         } else if (base <= 0 || scale <= 0) {
-          txPayload.push({ user_id: uid, income_id: incomeId, amount: savingsAmount, kind: 'aporte_reserva', occurred_at: dtISO })
+          txPayload.push(makeTx({ amount: savingsAmount, kind: 'aporte_reserva', occurred_at: occurredAtISO }))
         } else {
           const reserveAmount = Math.max(0, Number(amount ?? 0)) * Math.max(0, Number(reservePercent ?? 0)) * scale
           if (Number.isFinite(reserveAmount) && reserveAmount > 0) {
-            txPayload.push({ user_id: uid, income_id: incomeId, amount: reserveAmount, kind: 'aporte_reserva', occurred_at: dtISO })
+            txPayload.push(makeTx({ amount: reserveAmount, kind: 'aporte_reserva', occurred_at: occurredAtISO }))
           }
           for (const gg of activeGoals) {
             const ga = Math.max(0, Number(amount ?? 0)) * Math.max(0, Number(gg.allocation_percent ?? 0)) * scale
             if (Number.isFinite(ga) && ga > 0) {
-              txPayload.push({ user_id: uid, income_id: incomeId, amount: ga, kind: 'aporte_meta', goal_id: gg.id, occurred_at: dtISO })
+              txPayload.push(makeTx({ amount: ga, kind: 'aporte_meta', goal_id: gg.id, occurred_at: occurredAtISO }))
             }
           }
         }
 
         if (txPayload.length) {
+          const txPayloadDate = txPayload.map((t) => ({ ...t, occurred_at: occurredAtDate }))
+
           const ins1 = await supabase.from('transactions').insert(txPayload)
-          if (ins1.error) {
-            const msg = String(ins1.error.message ?? '')
-            if (msg.toLowerCase().includes('income_id')) {
-              const fallback = txPayload.map(({ income_id, ...rest }) => rest)
-              const ins2 = await supabase.from('transactions').insert(fallback)
-              if (ins2.error) throw ins2.error
+          if (!ins1.error) {
+            // ok
+          } else {
+            const ins2 = await supabase.from('transactions').insert(txPayloadDate)
+            if (!ins2.error) {
+              // ok
             } else {
-              throw ins1.error
+              const msg = String(ins1.error.message ?? ins2.error.message ?? '')
+              if (msg.toLowerCase().includes('income_id')) {
+                const fallbackISO = txPayload.map(({ income_id, ...rest }) => rest)
+                const fallbackDate = txPayloadDate.map(({ income_id, ...rest }) => rest)
+                const ins3 = await supabase.from('transactions').insert(fallbackISO)
+                if (!ins3.error) {
+                  // ok
+                } else {
+                  const ins4 = await supabase.from('transactions').insert(fallbackDate)
+                  if (ins4.error) throw ins4.error
+                }
+              } else {
+                throw ins2.error || ins1.error
+              }
             }
           }
         }
@@ -377,7 +406,18 @@ export default function Incomes() {
         if (del1.error) {
           const msg = String(del1.error.message ?? '')
           if (msg.toLowerCase().includes('income_id')) {
-            await supabase.from('transactions').delete().match({ user_id: uid, occurred_at: dtISO }).in('kind', ['aporte_reserva', 'aporte_meta'])
+            const del2 = await supabase
+              .from('transactions')
+              .delete()
+              .match({ user_id: uid, occurred_at: dtISO })
+              .in('kind', ['aporte_reserva', 'aporte_meta'])
+            if (del2.error) {
+              await supabase
+                .from('transactions')
+                .delete()
+                .match({ user_id: uid, occurred_at: incomeDate })
+                .in('kind', ['aporte_reserva', 'aporte_meta'])
+            }
           } else {
             throw del1.error
           }
