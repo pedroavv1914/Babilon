@@ -307,10 +307,43 @@ export default function Incomes() {
     }
 
     if (Number.isFinite(savingsAmount) && savingsAmount > 0) {
-      try {
-        const occurredAtISO = dtISO
-        const occurredAtDate = incomeDate
+      const occurredAtISO = dtISO
+      const occurredAtDate = incomeDate
 
+      const formatTxError = (message: string) => {
+        const msg = String(message ?? '').trim()
+        const lower = msg.toLowerCase()
+        if (lower.includes('enum') && lower.includes('transaction_kind') && lower.includes('aporte_meta')) {
+          return 'Seu banco ainda não suporta o tipo "aporte_meta". Rode a migração 011_saving_goals.sql no Supabase (SQL Editor) para adicionar esse tipo.'
+        }
+        if (lower.includes('column') && lower.includes('goal_id') && (lower.includes('does not exist') || lower.includes('não existe'))) {
+          return 'Seu banco ainda não tem a coluna goal_id em transactions. Rode a migração 011_saving_goals.sql no Supabase (SQL Editor).'
+        }
+        return msg || 'Erro ao registrar aportes.'
+      }
+
+      const insertTx = async (rowsISO: any[], rowsDate: any[]) => {
+        const attempts: { rows: any[]; dropIncomeId: boolean }[] = [
+          { rows: rowsISO, dropIncomeId: false },
+          { rows: rowsDate, dropIncomeId: false },
+          { rows: rowsISO, dropIncomeId: true },
+          { rows: rowsDate, dropIncomeId: true },
+        ]
+
+        let lastErr: any = null
+        for (const a of attempts) {
+          if (!a.rows.length) continue
+          const payload = a.dropIncomeId ? a.rows.map(({ income_id, ...rest }) => rest) : a.rows
+          const res = await supabase.from('transactions').insert(payload)
+          if (!res.error) return
+          lastErr = res.error
+          const msg = String(res.error.message ?? '')
+          if (!a.dropIncomeId && !msg.toLowerCase().includes('income_id')) break
+        }
+        throw lastErr
+      }
+
+      try {
         const [{ data: s, error: sErr }, { data: g, error: gErr }] = await Promise.all([
           supabase.from('user_settings').select('pay_percent,reserve_percent').eq('user_id', uid).maybeSingle(),
           supabase.from('saving_goals').select('id,name,allocation_percent,is_active').eq('user_id', uid).eq('is_active', true),
@@ -338,67 +371,47 @@ export default function Incomes() {
         const base = Math.max(0, Number(payPercent ?? 0))
         const scale = base > 0 ? totalPercent / base : 0
 
-        const makeTx = (row: { amount: number; kind: 'aporte_reserva' | 'aporte_meta'; goal_id?: number | null; occurred_at: string }) => {
-          return {
-            user_id: uid,
-            income_id: incomeId,
-            amount: row.amount,
-            kind: row.kind,
-            occurred_at: row.occurred_at,
-            goal_id: row.goal_id ?? null,
-          }
+        const makeReserveTx = (row: { amount: number; occurred_at: string }) => {
+          return { user_id: uid, income_id: incomeId, amount: row.amount, kind: 'aporte_reserva', occurred_at: row.occurred_at }
+        }
+        const makeGoalTx = (row: { amount: number; goal_id: number; occurred_at: string }) => {
+          const gid = Number(row.goal_id)
+          if (!Number.isFinite(gid) || gid <= 0) throw new Error('Selecione uma meta válida')
+          return { user_id: uid, income_id: incomeId, amount: row.amount, kind: 'aporte_meta', goal_id: gid, occurred_at: row.occurred_at }
         }
 
         if (allocationMode === 'manual') {
           if (manualDestination.startsWith('meta:')) {
             const gid = Number(manualDestination.slice('meta:'.length))
-            if (!Number.isFinite(gid) || gid <= 0) throw new Error('Selecione uma meta válida')
-            txPayload.push(makeTx({ amount: savingsAmount, kind: 'aporte_meta', goal_id: gid, occurred_at: occurredAtISO }))
+            txPayload.push(makeGoalTx({ amount: savingsAmount, goal_id: gid, occurred_at: occurredAtISO }))
           } else {
-            txPayload.push(makeTx({ amount: savingsAmount, kind: 'aporte_reserva', occurred_at: occurredAtISO }))
+            txPayload.push(makeReserveTx({ amount: savingsAmount, occurred_at: occurredAtISO }))
           }
         } else if (base <= 0 || scale <= 0) {
-          txPayload.push(makeTx({ amount: savingsAmount, kind: 'aporte_reserva', occurred_at: occurredAtISO }))
+          txPayload.push(makeReserveTx({ amount: savingsAmount, occurred_at: occurredAtISO }))
         } else {
           const reserveAmount = Math.max(0, Number(amount ?? 0)) * Math.max(0, Number(reservePercent ?? 0)) * scale
           if (Number.isFinite(reserveAmount) && reserveAmount > 0) {
-            txPayload.push(makeTx({ amount: reserveAmount, kind: 'aporte_reserva', occurred_at: occurredAtISO }))
+            txPayload.push(makeReserveTx({ amount: reserveAmount, occurred_at: occurredAtISO }))
           }
           for (const gg of activeGoals) {
             const ga = Math.max(0, Number(amount ?? 0)) * Math.max(0, Number(gg.allocation_percent ?? 0)) * scale
             if (Number.isFinite(ga) && ga > 0) {
-              txPayload.push(makeTx({ amount: ga, kind: 'aporte_meta', goal_id: gg.id, occurred_at: occurredAtISO }))
+              if (Number.isFinite(Number(gg.id)) && Number(gg.id) > 0) {
+                txPayload.push(makeGoalTx({ amount: ga, goal_id: gg.id, occurred_at: occurredAtISO }))
+              }
             }
           }
         }
 
         if (txPayload.length) {
-          const txPayloadDate = txPayload.map((t) => ({ ...t, occurred_at: occurredAtDate }))
+          const reserveISO = txPayload.filter((t) => t.kind === 'aporte_reserva')
+          const reserveDate = reserveISO.map((t) => ({ ...t, occurred_at: occurredAtDate }))
+          const goalsISO = txPayload.filter((t) => t.kind === 'aporte_meta')
+          const goalsDate = goalsISO.map((t) => ({ ...t, occurred_at: occurredAtDate }))
 
-          const ins1 = await supabase.from('transactions').insert(txPayload)
-          if (!ins1.error) {
-            // ok
-          } else {
-            const ins2 = await supabase.from('transactions').insert(txPayloadDate)
-            if (!ins2.error) {
-              // ok
-            } else {
-              const msg = String(ins1.error.message ?? ins2.error.message ?? '')
-              if (msg.toLowerCase().includes('income_id')) {
-                const fallbackISO = txPayload.map(({ income_id, ...rest }) => rest)
-                const fallbackDate = txPayloadDate.map(({ income_id, ...rest }) => rest)
-                const ins3 = await supabase.from('transactions').insert(fallbackISO)
-                if (!ins3.error) {
-                  // ok
-                } else {
-                  const ins4 = await supabase.from('transactions').insert(fallbackDate)
-                  if (ins4.error) throw ins4.error
-                }
-              } else {
-                throw ins2.error || ins1.error
-              }
-            }
-          }
+          if (reserveISO.length) await insertTx(reserveISO, reserveDate)
+          if (goalsISO.length) await insertTx(goalsISO, goalsDate)
         }
       } catch (e: any) {
         const incomeId = Number((createdIncome as any)?.id)
@@ -423,7 +436,7 @@ export default function Incomes() {
           }
         }
         await supabase.from('incomes').delete().match({ id: Number((createdIncome as any)?.id), user_id: uid })
-        setError(typeof e?.message === 'string' ? e.message : 'Erro ao registrar aportes.')
+        setError(typeof e?.message === 'string' ? formatTxError(e.message) : 'Erro ao registrar aportes.')
         return
       }
     }
