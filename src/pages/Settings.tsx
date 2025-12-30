@@ -2,7 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { getUserId } from '../lib/auth'
 
-type UserSettings = { user_id: string; pay_percent: number; reserve_percent: number; emergency_months: number }
+type UserSettings = {
+  user_id: string
+  pay_percent: number
+  reserve_percent: number
+  emergency_months: number
+  income_reference?: number
+}
 type Reserve = { user_id: string; target_months: number; target_amount: number | null; current_amount: number }
 type MonthlyExpense = { month: number; year: number; expenses_amount: number }
 type SavingGoal = {
@@ -70,7 +76,11 @@ export default function Settings() {
         { data: tx, error: txErr },
       ] =
         await Promise.all([
-          supabase.from('user_settings').select('user_id,pay_percent,reserve_percent,emergency_months').eq('user_id', uid).maybeSingle(),
+          supabase
+            .from('user_settings')
+            .select('user_id,pay_percent,reserve_percent,emergency_months,income_reference')
+            .eq('user_id', uid)
+            .maybeSingle(),
         supabase.from('emergency_reserve').select('user_id,target_months,target_amount,current_amount').eq('user_id', uid).maybeSingle(),
         supabase
           .from('transactions')
@@ -119,9 +129,13 @@ export default function Settings() {
               pay_percent: pay,
               reserve_percent: reservePercentRaw,
               emergency_months: Number((s as any).emergency_months ?? 6),
+              income_reference: Number((s as any).income_reference ?? 5000),
             }
-          : { user_id: uid, pay_percent: 0.1, reserve_percent: 0.1, emergency_months: 6 }
+          : { user_id: uid, pay_percent: 0.1, reserve_percent: 0.1, emergency_months: 6, income_reference: 5000 }
       )
+      if (s && (s as any).income_reference) {
+        setExampleIncome(Number((s as any).income_reference))
+      }
       setReserve(
         (() => {
           const reserveTxListRaw = (reserveTx || []) as TxHistoryItem[]
@@ -233,12 +247,14 @@ export default function Settings() {
     const pp = Number(settings.pay_percent ?? 0)
     if (!Number.isFinite(pp) || pp < 0 || pp > 0.95) {
       setError('Informe um percentual válido (ex.: 0.10 para 10%).')
+      window.scrollTo({ top: 0, behavior: 'smooth' })
       return
     }
 
     const rp = Number(settings.reserve_percent ?? 0)
     if (!Number.isFinite(rp) || rp < 0 || rp > pp) {
       setError('Informe um percentual válido para a reserva (0 até o percentual mínimo).')
+      window.scrollTo({ top: 0, behavior: 'smooth' })
       return
     }
 
@@ -246,36 +262,42 @@ export default function Settings() {
     for (const g of goals) {
       if (!g.name.trim()) {
         setError('Dê um nome para todas as metas (ou remova a meta vazia).')
+        window.scrollTo({ top: 0, behavior: 'smooth' })
         return
       }
       const ap = Number(g.allocation_percent ?? 0)
       if (!Number.isFinite(ap) || ap < 0 || ap > pp) {
         setError('Verifique os percentuais das metas (0 até o percentual mínimo).')
+        window.scrollTo({ top: 0, behavior: 'smooth' })
         return
       }
       const ta = g.target_amount === null ? null : Number(g.target_amount)
       if (ta !== null && (!Number.isFinite(ta) || ta <= 0)) {
         setError('Se definir um valor alvo para uma meta, ele precisa ser maior que zero.')
+        window.scrollTo({ top: 0, behavior: 'smooth' })
         return
       }
     }
 
     const goalsSum = activeGoals.reduce((acc, g) => acc + Math.max(0, Number(g.allocation_percent ?? 0)), 0)
     const planSum = rp + goalsSum
-    if (Math.abs(planSum - pp) > 1e-9) {
-      setError('A soma dos percentuais (reserva + metas ativas) deve fechar exatamente o percentual mínimo.')
+    if (planSum > pp + 1e-9) {
+      setError('A soma dos percentuais (reserva + metas ativas) não pode exceder o percentual mínimo.')
+      window.scrollTo({ top: 0, behavior: 'smooth' })
       return
     }
 
     const tm = Number(reserve.target_months ?? 0)
     if (!Number.isFinite(tm) || tm < 1 || tm > 36) {
       setError('Informe a meta de meses (1 a 36).')
+      window.scrollTo({ top: 0, behavior: 'smooth' })
       return
     }
 
     const ta = reserve.target_amount === null ? null : Number(reserve.target_amount)
     if (ta !== null && (!Number.isFinite(ta) || ta <= 0)) {
       setError('Se definir um valor alvo, ele precisa ser maior que zero.')
+      window.scrollTo({ top: 0, behavior: 'smooth' })
       return
     }
 
@@ -286,7 +308,13 @@ export default function Settings() {
       const em = Math.max(1, Math.min(36, Number(settings.emergency_months ?? 6)))
 
       const { error: sErr } = await supabase.from('user_settings').upsert(
-        { user_id: uid, pay_percent: pp, reserve_percent: rp, emergency_months: em },
+        {
+          user_id: uid,
+          pay_percent: pp,
+          reserve_percent: rp,
+          emergency_months: em,
+          income_reference: Math.max(0, Number(exampleIncome ?? 0)),
+        },
         { onConflict: 'user_id' }
       )
       if (sErr) throw sErr
@@ -313,7 +341,8 @@ export default function Settings() {
             allocation_percent: Number(g.allocation_percent ?? 0),
             is_active: Boolean(g.is_active),
           })
-          .match({ id: g.id, user_id: uid })
+          .eq('id', g.id)
+          .eq('user_id', uid)
       )
       const results = updates.length ? await Promise.all(updates) : []
       for (const r of results) {
@@ -334,9 +363,11 @@ export default function Settings() {
       }
 
       setNotice('Planejamento salvo.')
+      window.scrollTo({ top: 0, behavior: 'smooth' })
       await load()
     } catch (e: any) {
       setError(typeof e?.message === 'string' ? e.message : 'Erro ao salvar planejamento.')
+      window.scrollTo({ top: 0, behavior: 'smooth' })
     } finally {
       setSaving(false)
     }
