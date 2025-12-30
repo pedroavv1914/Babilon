@@ -15,14 +15,26 @@ type SavingGoal = {
   is_primary: boolean
   created_at: string
 }
+type TxHistoryItem = {
+  id: number
+  amount: number
+  occurred_at: string
+  kind: string
+  income_id: number | null
+  goal_id?: number | null
+}
 type GoalTx = { goal_id: number | null; amount: number }
 
 export default function Settings() {
   const [settings, setSettings] = useState<UserSettings | null>(null)
   const [reserve, setReserve] = useState<Reserve | null>(null)
+  const [reserveTxList, setReserveTxList] = useState<TxHistoryItem[]>([])
   const [expenseHistory, setExpenseHistory] = useState<MonthlyExpense[]>([])
   const [goals, setGoals] = useState<SavingGoal[]>([])
   const [goalSavedById, setGoalSavedById] = useState<Record<number, number>>({})
+  const [goalTxListById, setGoalTxListById] = useState<Record<number, TxHistoryItem[]>>({})
+  const [expandedGoalId, setExpandedGoalId] = useState<number | null>(null)
+  const [showReserveHistory, setShowReserveHistory] = useState(false)
   const [deletedGoalIds, setDeletedGoalIds] = useState<number[]>([])
   const [newGoalName, setNewGoalName] = useState('')
   const [newGoalTarget, setNewGoalTarget] = useState<number | ''>('')
@@ -60,7 +72,13 @@ export default function Settings() {
         await Promise.all([
           supabase.from('user_settings').select('user_id,pay_percent,reserve_percent,emergency_months').eq('user_id', uid).maybeSingle(),
         supabase.from('emergency_reserve').select('user_id,target_months,target_amount,current_amount').eq('user_id', uid).maybeSingle(),
-        supabase.from('transactions').select('amount').eq('user_id', uid).eq('kind', 'aporte_reserva').limit(10000),
+        supabase
+          .from('transactions')
+          .select('id,amount,occurred_at,kind,income_id')
+          .eq('user_id', uid)
+          .eq('kind', 'aporte_reserva')
+          .order('occurred_at', { ascending: false })
+          .limit(5000),
         supabase
           .from('vw_monthly_summary')
           .select('month,year,expenses_amount')
@@ -75,12 +93,13 @@ export default function Settings() {
           .order('created_at', { ascending: false }),
         supabase
           .from('transactions')
-          .select('goal_id,amount')
+          .select('id,goal_id,amount,occurred_at,kind,income_id')
           .eq('user_id', uid)
           .eq('kind', 'aporte_meta')
           .not('goal_id', 'is', null)
+          .order('occurred_at', { ascending: false })
           .limit(5000),
-        ])
+      ])
       if (sErr) throw sErr
       if (rErr) throw rErr
       if (reserveTxErr) throw reserveTxErr
@@ -105,9 +124,12 @@ export default function Settings() {
       )
       setReserve(
         (() => {
+          const reserveTxListRaw = (reserveTx || []) as TxHistoryItem[]
+          setReserveTxList(reserveTxListRaw)
+
           const reserveCurrentFromTx = Math.max(
             0,
-            (reserveTx || []).reduce((acc: number, row: any) => acc + Math.max(0, Number(row?.amount ?? 0)), 0)
+            reserveTxListRaw.reduce((acc: number, row: any) => acc + Math.max(0, Number(row?.amount ?? 0)), 0)
           )
           const out: Reserve = r
             ? {
@@ -147,12 +169,16 @@ export default function Settings() {
         }))
       )
       const goalMap: Record<number, number> = {}
-      for (const t of (tx || []) as GoalTx[]) {
+      const goalTxMap: Record<number, TxHistoryItem[]> = {}
+      for (const t of (tx || []) as TxHistoryItem[]) {
         const gid = Number((t as any).goal_id ?? 0)
         if (!gid) continue
         goalMap[gid] = (goalMap[gid] ?? 0) + Math.max(0, Number((t as any).amount ?? 0))
+        if (!goalTxMap[gid]) goalTxMap[gid] = []
+        goalTxMap[gid].push(t)
       }
       setGoalSavedById(goalMap)
+      setGoalTxListById(goalTxMap)
       setDeletedGoalIds([])
     } catch (e: any) {
       if (seq !== loadSeq.current) return
@@ -652,6 +678,42 @@ export default function Settings() {
                   Sem meta definida.
                 </div>
               )}
+
+              <div className="mt-4 border-t border-[#E4E1D6] pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowReserveHistory(!showReserveHistory)}
+                  className="flex w-full items-center justify-between text-xs text-[#6B7280] hover:text-[#374151]"
+                >
+                  <span>Histórico ({reserveTxList.length})</span>
+                  {showReserveHistory ? (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m18 15-6-6-6 6"/></svg>
+                  ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                  )}
+                </button>
+                {showReserveHistory && (
+                  <div className="mt-2 max-h-60 overflow-y-auto pr-2 space-y-2 custom-scrollbar">
+                    {reserveTxList.length === 0 ? (
+                      <div className="text-xs text-gray-400 italic">Nenhum aporte registrado.</div>
+                    ) : (
+                      reserveTxList.map((tx) => (
+                        <div key={tx.id} className="flex justify-between text-xs border-b border-gray-100 pb-1 last:border-0">
+                          <div>
+                            <div className="font-medium text-[#374151]">
+                              {tx.income_id ? 'Distribuição de Renda' : 'Aporte Manual'}
+                            </div>
+                            <div className="text-[10px] text-[#9CA3AF]">
+                              {new Date(tx.occurred_at).toLocaleDateString('pt-BR')}
+                            </div>
+                          </div>
+                          <div className="font-medium text-[#059669]">+{fmt.format(tx.amount)}</div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </section>
@@ -842,6 +904,42 @@ export default function Settings() {
                       Remover
                     </button>
                   </div>
+                </div>
+
+                <div className="mt-4 border-t border-[#E4E1D6] pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setExpandedGoalId(expandedGoalId === g.id ? null : g.id)}
+                    className="flex w-full items-center justify-between text-xs text-[#6B7280] hover:text-[#374151]"
+                  >
+                    <span>Histórico ({(goalTxListById[g.id] || []).length})</span>
+                    {expandedGoalId === g.id ? (
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m18 15-6-6-6 6"/></svg>
+                    ) : (
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    )}
+                  </button>
+                  {expandedGoalId === g.id && (
+                    <div className="mt-2 max-h-40 overflow-y-auto pr-2 space-y-2 custom-scrollbar">
+                      {(goalTxListById[g.id] || []).length === 0 ? (
+                        <div className="text-xs text-gray-400 italic">Nenhum aporte registrado.</div>
+                      ) : (
+                        (goalTxListById[g.id] || []).map((tx) => (
+                          <div key={tx.id} className="flex justify-between text-xs border-b border-gray-100 pb-1 last:border-0">
+                            <div>
+                              <div className="font-medium text-[#374151]">
+                                {tx.income_id ? 'Distribuição de Renda' : 'Aporte Manual'}
+                              </div>
+                              <div className="text-[10px] text-[#9CA3AF]">
+                                {new Date(tx.occurred_at).toLocaleDateString('pt-BR')}
+                              </div>
+                            </div>
+                            <div className="font-medium text-[#059669]">+{fmt.format(tx.amount)}</div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
