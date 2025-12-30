@@ -15,6 +15,7 @@ export default function Transactions() {
   const [categories, setCategories] = useState<Category[]>([])
   const [goals, setGoals] = useState<GoalLite[]>([])
   const [categoryId, setCategoryId] = useState<number | null>(null)
+  const [goalId, setGoalId] = useState<number | null>(null)
   const [amount, setAmount] = useState<number>(0)
   const [kind, setKind] = useState<TransactionKind>('despesa')
   const [date, setDate] = useState<string>(new Date().toISOString().slice(0, 10))
@@ -260,11 +261,13 @@ export default function Transactions() {
     }
     const payload: any = { user_id: uid, amount, kind, occurred_at: date }
     if (kind === 'despesa' && categoryId) payload.category_id = categoryId
+    if (kind === 'aporte_meta' && goalId) payload.goal_id = goalId
     const { error } = await supabase.from('transactions').insert(payload)
     if (error) setError(error.message)
     setAmount(0)
     setKind('despesa')
     setCategoryId(null)
+    setGoalId(null)
     await load()
   }
 
@@ -278,6 +281,7 @@ export default function Transactions() {
   }
 
   const selectedCategoryName = categoryId ? categoryNameById[categoryId] ?? null : null
+  const selectedGoalName = goalId ? goalNameById[goalId] ?? null : null
   const selectedBudgetLimit = categoryId ? Number(budgetLimitByCategoryId[categoryId] ?? 0) : 0
   const selectedSpent = categoryId ? Number(spentByCategoryId[categoryId] ?? 0) : 0
   const selectedAfterSpent = kind === 'despesa' && categoryId ? selectedSpent + Math.max(0, amount) : selectedSpent
@@ -406,26 +410,48 @@ export default function Transactions() {
               >
                 <option value="despesa">Despesa</option>
                 <option value="aporte_reserva">Aporte à Reserva</option>
+                <option value="aporte_meta">Aporte em Meta</option>
                 <option value="pagamento_cartao">Pagamento de Cartão</option>
               </select>
             </div>
 
-            <div>
-              <label className="block text-xs text-[#6B7280] mb-1">Categoria</label>
-              <select
-                className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
-                value={categoryId ?? ''}
-                onChange={(e) => setCategoryId(e.target.value ? Number(e.target.value) : null)}
-                disabled={loading || kind !== 'despesa'}
-              >
-                <option value="">Sem categoria</option>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {kind === 'despesa' && (
+              <div>
+                <label className="block text-xs text-[#6B7280] mb-1">Categoria</label>
+                <select
+                  className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
+                  value={categoryId ?? ''}
+                  onChange={(e) => setCategoryId(e.target.value ? Number(e.target.value) : null)}
+                  disabled={loading}
+                >
+                  <option value="">Sem categoria</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {kind === 'aporte_meta' && (
+              <div>
+                <label className="block text-xs text-[#6B7280] mb-1">Meta</label>
+                <select
+                  className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
+                  value={goalId ?? ''}
+                  onChange={(e) => setGoalId(e.target.value ? Number(e.target.value) : null)}
+                  disabled={loading}
+                >
+                  <option value="">Selecione a meta...</option>
+                  {goals.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-2">
               <div>
@@ -464,6 +490,7 @@ export default function Transactions() {
                       : 'Pagamento de Cartão'}{' '}
                 de {fmt.format(Math.max(0, amount))}{' '}
                 {selectedCategoryName && kind === 'despesa' ? `em ${selectedCategoryName}` : ''}
+                {selectedGoalName && kind === 'aporte_meta' ? `para ${selectedGoalName}` : ''}
               </div>
               {kind === 'despesa' && categoryId && selectedBudgetLimit > 0 ? (
                 <div className="mt-2 flex flex-wrap items-center gap-2">
