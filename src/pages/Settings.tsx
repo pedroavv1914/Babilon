@@ -597,65 +597,37 @@ export default function Settings() {
 
           <div className="mt-3 h-[2px] w-16 rounded-full bg-[#C2A14D]" />
 
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs text-[#6B7280] mb-1">Aporte mensal (simulação)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  inputMode="decimal"
-                  className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
-                  value={monthlyAporte}
-                  onChange={(e) => setMonthlyAporte(e.target.value === '' ? 0 : Number(e.target.value))}
-                  disabled={saving || loading}
-                />
-                {reserveEffectiveTarget && reserveEffectiveTarget > reserveCurrent && monthlyAporte > 0 ? (
-                  <div className="mt-2 text-[11px] text-[#6B7280]">
-                    Para alcançar {fmt.format(reserveEffectiveTarget)} ({reserveEffectiveTargetLabel ?? 'meta'}), faltam{' '}
-                    {fmt.format(Math.max(0, reserveEffectiveTarget - reserveCurrent))} · tempo estimado: {reserveAporteLabel ?? '—'}.
-                  </div>
-                ) : (
-                  <div className="mt-2 text-[11px] text-[#6B7280]">
-                    {reserveTarget
-                      ? 'Informe um aporte para estimar o tempo até a meta.'
-                      : avgExpense
-                        ? `Sugestão de meta (6m): ${suggestedTarget ? fmt.format(suggestedTarget) : '—'}`
-                        : 'Defina um valor alvo ou registre despesas para gerar sugestão.'}
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-xs text-[#6B7280] mb-1">Valor alvo (opcional)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  inputMode="decimal"
-                  className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
-                  value={reserve?.target_amount ?? ''}
-                  onChange={(e) =>
-                    setReserve((r) =>
-                      r ? { ...r, target_amount: e.target.value === '' ? null : Number(e.target.value) } : r
-                    )
-                  }
-                  disabled={saving || loading}
-                />
-                <div className="mt-2 flex items-center justify-between gap-2">
-                  <div className="text-[11px] text-[#6B7280]">
-                    {reserveTarget ? 'Defina um valor alvo para acompanhar progresso e simular aportes.' : 'Se não definir, o app usa uma sugestão automática quando disponível.'}
-                  </div>
-                  {suggestedTarget && (!reserve?.target_amount || Number(reserve.target_amount) !== suggestedTarget) ? (
-                    <button
-                      type="button"
-                      className="text-[11px] rounded-full border border-[#D6D3C8] bg-white px-2 py-1 text-[#111827] hover:bg-[#F5F2EB] disabled:opacity-60"
-                      onClick={() => setReserve((r) => (r ? { ...r, target_amount: suggestedTarget } : r))}
-                      disabled={saving || loading}
-                    >
-                      Usar sugestão
-                    </button>
-                  ) : null}
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+            <div>
+              <label className="block text-xs text-[#6B7280] mb-1">Valor alvo da reserva</label>
+              <input
+                type="number"
+                step="0.01"
+                inputMode="decimal"
+                placeholder="Ex.: 10000.00"
+                className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
+                value={reserve?.target_amount ?? ''}
+                onChange={(e) =>
+                  setReserve((r) =>
+                    r ? { ...r, target_amount: e.target.value === '' ? null : Number(e.target.value) } : r
+                  )
+                }
+                disabled={saving || loading}
+              />
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                <div className="text-[11px] text-[#6B7280]">
+                  {reserveTarget ? 'Meta definida.' : 'Defina um valor para acompanhar o progresso.'}
                 </div>
+                {suggestedTarget && (!reserve?.target_amount || Number(reserve.target_amount) !== suggestedTarget) ? (
+                  <button
+                    type="button"
+                    className="text-[11px] rounded-full border border-[#D6D3C8] bg-white px-2 py-1 text-[#111827] hover:bg-[#F5F2EB] disabled:opacity-60"
+                    onClick={() => setReserve((r) => (r ? { ...r, target_amount: suggestedTarget } : r))}
+                    disabled={saving || loading}
+                  >
+                    Usar sugestão ({fmt.format(suggestedTarget)})
+                  </button>
+                ) : null}
               </div>
             </div>
 
@@ -667,31 +639,19 @@ export default function Settings() {
 
               {reserveTarget ? (
                 <>
-                  <div className="text-sm mt-3 flex items-center justify-between">
-                    <span className="text-[#6B7280]">Meta</span>
-                    <span className="font-medium text-[#111827]">{fmt.format(reserveTarget)}</span>
-                  </div>
-
-                  {reserveMissing !== null ? (
-                    <div className="text-sm mt-2 flex items-center justify-between">
-                      <span className="text-[#6B7280]">Falta</span>
-                      <span className="font-medium text-[#111827]">{fmt.format(reserveMissing)}</span>
-                    </div>
-                  ) : null}
-
                   <div className="mt-3 h-2 w-full rounded-full bg-[#E7E1D4] overflow-hidden">
                     <div className="h-full bg-[#0EA5E9]" style={{ width: `${(reservePct ?? 0) * 100}%` }} />
                   </div>
-
-                  <div className="mt-2 text-xs text-[#6B7280]">{Math.round((reservePct ?? 0) * 100)}% da meta</div>
+                  <div className="mt-2 flex justify-between text-xs text-[#6B7280]">
+                    <span>{Math.round((reservePct ?? 0) * 100)}% concluído</span>
+                    <span>Meta: {fmt.format(reserveTarget)}</span>
+                  </div>
                 </>
               ) : (
                 <div className="text-xs text-[#6B7280] mt-3">
-                  Defina um valor alvo para acompanhar o progresso (como no painel da Visão Geral).
+                  Sem meta definida.
                 </div>
               )}
-
-              <div className="mt-4 h-px bg-[#E4E1D6]" />
             </div>
           </div>
         </section>
