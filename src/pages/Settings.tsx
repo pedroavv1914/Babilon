@@ -12,6 +12,7 @@ type SavingGoal = {
   target_amount: number | null
   allocation_percent: number
   is_active: boolean
+  is_primary: boolean
   created_at: string
 }
 type GoalTx = { goal_id: number | null; amount: number }
@@ -33,6 +34,7 @@ export default function Settings() {
   const [notice, setNotice] = useState<string | null>(null)
   const [exampleIncome, setExampleIncome] = useState<number>(5000)
   const [monthlyAporte, setMonthlyAporte] = useState<number>(500)
+  const [primarySimulatedAporte, setPrimarySimulatedAporte] = useState<number>(0)
   const loadSeq = useRef(0)
 
   const fmt = useMemo(() => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }), [])
@@ -68,7 +70,7 @@ export default function Settings() {
           .limit(6),
         supabase
           .from('saving_goals')
-          .select('id,user_id,name,target_amount,allocation_percent,is_active,created_at')
+          .select('id,user_id,name,target_amount,allocation_percent,is_active,is_primary,created_at')
           .eq('user_id', uid)
           .order('created_at', { ascending: false }),
         supabase
@@ -140,6 +142,7 @@ export default function Settings() {
           target_amount: row?.target_amount === null || row?.target_amount === undefined ? null : Number(row.target_amount),
           allocation_percent: Number(row?.allocation_percent ?? 0),
           is_active: Boolean(row?.is_active ?? true),
+          is_primary: Boolean(row?.is_primary ?? false),
           created_at: String(row?.created_at ?? ''),
         }))
       )
@@ -180,6 +183,21 @@ export default function Settings() {
     const t = window.setTimeout(() => setNotice(null), 3500)
     return () => window.clearTimeout(t)
   }, [notice])
+
+  async function setPrimaryGoal(goalId: number) {
+    if (saving || loading) return
+    setSaving(true)
+    setError(null)
+    try {
+      const { error } = await supabase.rpc('set_primary_goal', { p_goal_id: goalId })
+      if (error) throw error
+      await load()
+    } catch (e: any) {
+      setError(typeof e?.message === 'string' ? e.message : 'Erro ao definir meta principal.')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   async function save() {
     setError(null)
@@ -328,11 +346,11 @@ export default function Settings() {
     return avgExpense * baseMonths
   }, [avgExpense])
 
-  const effectiveTarget = reserveTarget ?? suggestedTarget
-  const effectiveTargetLabel = reserveTarget ? 'meta configurada' : suggestedTarget ? 'meta sugerida (6m)' : null
+  const reserveEffectiveTarget = reserveTarget ?? suggestedTarget
+  const reserveEffectiveTargetLabel = reserveTarget ? 'meta configurada' : suggestedTarget ? 'meta sugerida (6m)' : null
 
-  const aporteTime = useMemo(() => {
-    const target = effectiveTarget
+  const reserveAporteTime = useMemo(() => {
+    const target = reserveEffectiveTarget
     const aporte = Math.max(0, Number(monthlyAporte ?? 0))
     if (!target || target <= reserveCurrent || aporte <= 0) return null
     const missing = target - reserveCurrent
@@ -340,21 +358,71 @@ export default function Settings() {
     const years = Math.floor(months / 12)
     const remainingMonths = months % 12
     return { months, years, remainingMonths }
-  }, [effectiveTarget, monthlyAporte, reserveCurrent])
+  }, [reserveEffectiveTarget, monthlyAporte, reserveCurrent])
 
-  const aporteLabel = useMemo(() => {
-    if (!aporteTime) return null
-    if (aporteTime.years > 0 && aporteTime.remainingMonths > 0) return `${aporteTime.years}a ${aporteTime.remainingMonths}m`
-    if (aporteTime.years > 0) return `${aporteTime.years}a`
-    return `${aporteTime.months}m`
-  }, [aporteTime])
+  const reserveAporteLabel = useMemo(() => {
+    if (!reserveAporteTime) return null
+    if (reserveAporteTime.years > 0 && reserveAporteTime.remainingMonths > 0) return `${reserveAporteTime.years}a ${reserveAporteTime.remainingMonths}m`
+    if (reserveAporteTime.years > 0) return `${reserveAporteTime.years}a`
+    return `${reserveAporteTime.months}m`
+  }, [reserveAporteTime])
 
-  const aporteTone: 'neutral' | 'ok' | 'warn' = useMemo(() => {
-    if (!aporteTime) return 'neutral'
-    if (aporteTime.months <= 6) return 'ok'
-    if (aporteTime.months <= 12) return 'warn'
+  const primaryGoal = useMemo(() => {
+    const savedGoals = goals.filter((g) => g.id > 0)
+    if (savedGoals.length === 1) return savedGoals[0]
+    return savedGoals.find((g) => g.is_primary) || null
+  }, [goals])
+
+  useEffect(() => {
+    if (primaryGoal && exampleIncome) {
+      setPrimarySimulatedAporte(exampleIncome * (primaryGoal.allocation_percent || 0))
+    }
+  }, [primaryGoal?.id, primaryGoal?.allocation_percent, exampleIncome])
+
+  const primaryCurrent = primaryGoal ? Math.max(0, Number(goalSavedById[primaryGoal.id] ?? 0)) : null
+  const primaryTarget = primaryGoal?.target_amount ? Number(primaryGoal.target_amount) : null
+  const primaryPct = primaryTarget && primaryCurrent !== null ? Math.min(1, primaryCurrent / primaryTarget) : null
+
+  const kpiUsePrimary = !!primaryGoal
+  const kpiTarget = kpiUsePrimary ? primaryTarget : reserveTarget
+  const kpiCurrent = kpiUsePrimary ? (primaryCurrent ?? 0) : reserveCurrent
+  const kpiLabel = kpiUsePrimary ? 'Meta principal' : 'Meta'
+  const kpiSubtitle = kpiUsePrimary
+    ? primaryGoal?.name ?? 'Principal'
+    : reserveTarget
+      ? 'Valor alvo configurado'
+      : 'Defina um alvo opcional'
+  const kpiPct = kpiUsePrimary ? primaryPct : reservePct
+
+  const kpiAporteTime = useMemo(() => {
+    if (kpiUsePrimary) {
+      if (!primaryTarget || primaryCurrent === null) return null
+      // Use goal allocation applied to example income
+      const aporte = Math.max(0, Number(primarySimulatedAporte ?? 0))
+      if (primaryTarget <= primaryCurrent || aporte <= 0) return null
+      const missing = primaryTarget - primaryCurrent
+      const months = Math.ceil(missing / aporte)
+      const years = Math.floor(months / 12)
+      const remainingMonths = months % 12
+      return { months, years, remainingMonths, amount: aporte }
+    } else {
+      return reserveAporteTime ? { ...reserveAporteTime, amount: Math.max(0, Number(monthlyAporte ?? 0)) } : null
+    }
+  }, [kpiUsePrimary, primaryTarget, primaryCurrent, monthlyAporte, reserveAporteTime, primarySimulatedAporte])
+
+  const kpiAporteLabel = useMemo(() => {
+    if (!kpiAporteTime) return null
+    if (kpiAporteTime.years > 0 && kpiAporteTime.remainingMonths > 0) return `${kpiAporteTime.years}a ${kpiAporteTime.remainingMonths}m`
+    if (kpiAporteTime.years > 0) return `${kpiAporteTime.years}a`
+    return `${kpiAporteTime.months}m`
+  }, [kpiAporteTime])
+
+  const kpiAporteTone: 'neutral' | 'ok' | 'warn' = useMemo(() => {
+    if (!kpiAporteTime) return 'neutral'
+    if (kpiAporteTime.months <= 6) return 'ok'
+    if (kpiAporteTime.months <= 12) return 'warn'
     return 'neutral'
-  }, [aporteTime])
+  }, [kpiAporteTime])
 
   const previewSavings = Math.max(0, Number(exampleIncome ?? 0)) * payPercent
   const previewAvailable = Math.max(0, Number(exampleIncome ?? 0)) - previewSavings
@@ -389,9 +457,9 @@ export default function Settings() {
               <div className="mt-4 flex flex-wrap items-center gap-2">
                 <Pill variant="gold">Pague-se primeiro: {(payPercent * 100).toFixed(1)}%</Pill>
                 <Pill variant="neutral">Distribuído: {(Math.min(1, allocationSum) * 100).toFixed(1)}%</Pill>
-                <Pill variant="sky">Tempo p/ meta: {aporteLabel ?? '—'}</Pill>
+                <Pill variant="sky">Tempo p/ meta: {kpiAporteLabel ?? '—'}</Pill>
                 <Pill>Saldo reserva: {fmt.format(reserveCurrent)}</Pill>
-                <Pill>Meta: {reserveTarget ? fmt.format(reserveTarget) : '—'}</Pill>
+                <Pill>Meta: {kpiTarget ? fmt.format(kpiTarget) : '—'}</Pill>
               </div>
             </div>
           </div>
@@ -422,17 +490,19 @@ export default function Settings() {
         <WideKpi title="Poupança padrão" value={`${(payPercent * 100).toFixed(1)}%`} subtitle="Aplicada na página de Renda" tone={payPercent >= 0.2 ? 'ok' : payPercent >= 0.1 ? 'neutral' : 'warn'} />
         <WideKpi
           title="Tempo p/ meta"
-          value={aporteLabel ?? '—'}
+          value={kpiAporteLabel ?? '—'}
           subtitle={
-            effectiveTarget && effectiveTarget > reserveCurrent && monthlyAporte > 0
-              ? `Aporte: ${fmt.format(Math.max(0, monthlyAporte))}/m (${effectiveTargetLabel ?? 'meta'})`
-              : 'Defina uma meta e simule um aporte mensal'
+            kpiAporteTime
+              ? `Aporte: ${fmt.format(kpiAporteTime.amount)}/m (${kpiUsePrimary ? 'simulado' : 'simulado'})`
+              : kpiUsePrimary
+                ? 'Defina percentual e renda de referência'
+                : 'Defina uma meta e simule um aporte mensal'
           }
-          tone={aporteTone === 'ok' ? 'ok' : aporteTone === 'warn' ? 'warn' : 'neutral'}
+          tone={kpiAporteTone === 'ok' ? 'ok' : kpiAporteTone === 'warn' ? 'warn' : 'neutral'}
         />
         <WideKpi title="Saldo da reserva" value={fmt.format(reserveCurrent)} subtitle="Patrimônio de proteção" tone={reserveCurrent > 0 ? 'ok' : 'neutral'} />
-        <WideKpi title="Meta" value={reserveTarget ? fmt.format(reserveTarget) : '—'} subtitle={reserveTarget ? 'Valor alvo configurado' : 'Defina um alvo opcional'} tone={reserveTarget ? 'neutral' : 'warn'} />
-        <WideKpi title="Progresso" value={reservePct === null ? '—' : `${Math.round(reservePct * 100)}%`} subtitle="Da meta de reserva" tone={reservePct === null ? 'neutral' : reservePct >= 0.8 ? 'ok' : reservePct >= 0.5 ? 'warn' : 'bad'} />
+        <WideKpi title={kpiLabel} value={kpiTarget ? fmt.format(kpiTarget) : '—'} subtitle={kpiSubtitle} tone={kpiTarget ? 'neutral' : 'warn'} />
+        <WideKpi title="Progresso" value={kpiPct === null ? '—' : `${Math.round(kpiPct * 100)}%`} subtitle={kpiUsePrimary ? 'Da meta principal' : 'Da meta de reserva'} tone={kpiPct === null ? 'neutral' : kpiPct >= 0.8 ? 'ok' : kpiPct >= 0.5 ? 'warn' : 'bad'} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -540,10 +610,10 @@ export default function Settings() {
                   onChange={(e) => setMonthlyAporte(e.target.value === '' ? 0 : Number(e.target.value))}
                   disabled={saving || loading}
                 />
-                {effectiveTarget && effectiveTarget > reserveCurrent && monthlyAporte > 0 ? (
+                {reserveEffectiveTarget && reserveEffectiveTarget > reserveCurrent && monthlyAporte > 0 ? (
                   <div className="mt-2 text-[11px] text-[#6B7280]">
-                    Para alcançar {fmt.format(effectiveTarget)} ({effectiveTargetLabel ?? 'meta'}), faltam{' '}
-                    {fmt.format(Math.max(0, effectiveTarget - reserveCurrent))} · tempo estimado: {aporteLabel ?? '—'}.
+                    Para alcançar {fmt.format(reserveEffectiveTarget)} ({reserveEffectiveTargetLabel ?? 'meta'}), faltam{' '}
+                    {fmt.format(Math.max(0, reserveEffectiveTarget - reserveCurrent))} · tempo estimado: {reserveAporteLabel ?? '—'}.
                   </div>
                 ) : (
                   <div className="mt-2 text-[11px] text-[#6B7280]">
@@ -640,6 +710,36 @@ export default function Settings() {
 
         <div className="mt-3 h-[2px] w-16 rounded-full bg-[#C2A14D]" />
 
+        {primaryGoal && (
+          <div className="mt-4 mb-6 p-4 rounded-xl border border-[#D6D3C8] bg-white">
+            <div className="text-sm font-medium text-[#111827] mb-2">Simulação da Meta Principal</div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+              <div>
+                <label className="block text-xs text-[#6B7280] mb-1">Aporte mensal simulado</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  inputMode="decimal"
+                  className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
+                  value={primarySimulatedAporte}
+                  onChange={(e) => setPrimarySimulatedAporte(Number(e.target.value))}
+                />
+              </div>
+              <div className="text-xs text-[#6B7280]">
+                {kpiAporteTime ? (
+                  <>
+                    Tempo estimado: <span className="font-medium text-[#111827]">{kpiAporteLabel}</span>
+                    <br />
+                    Para atingir: {fmt.format(primaryTarget ?? 0)}
+                  </>
+                ) : (
+                  'Defina um valor alvo na meta para ver o tempo estimado.'
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <Pill variant="sky">Guardado em metas: {fmt.format(goalsSavedTotal)}</Pill>
           <Pill variant="neutral">Metas: {(activeGoalsSum * 100).toFixed(1)}%</Pill>
@@ -653,8 +753,25 @@ export default function Settings() {
             {goals.map((g) => (
               <div key={g.id} className="rounded-2xl border border-[#E4E1D6] bg-white p-4 shadow-[0_10px_30px_rgba(11,19,36,0.06)]">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="text-xs text-[#6B7280]">
-                    Guardado: <span className="font-medium text-[#111827]">{fmt.format(Math.max(0, Number(goalSavedById[g.id] ?? 0)))}</span>
+                  <div className="flex items-center gap-3">
+                    {g.id > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setPrimaryGoal(g.id)}
+                        disabled={saving || loading || g.is_primary}
+                        className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
+                          g.is_primary
+                            ? 'bg-amber-100 text-amber-700 border-amber-200'
+                            : 'bg-white text-gray-400 border-gray-200 hover:bg-gray-50'
+                        }`}
+                        title={g.is_primary ? 'Meta principal' : 'Definir como meta principal'}
+                      >
+                        {g.is_primary ? '★ Principal' : '☆ Definir principal'}
+                      </button>
+                    )}
+                    <div className="text-xs text-[#6B7280]">
+                      Guardado: <span className="font-medium text-[#111827]">{fmt.format(Math.max(0, Number(goalSavedById[g.id] ?? 0)))}</span>
+                    </div>
                   </div>
                   {g.target_amount ? (
                     <div className="text-xs text-[#6B7280]">
@@ -829,6 +946,7 @@ export default function Settings() {
                       target_amount: nt,
                       allocation_percent: Number.isFinite(np) ? np : 0,
                       is_active: Boolean(newGoalActive),
+                      is_primary: false,
                       created_at: new Date().toISOString(),
                     },
                     ...all,
