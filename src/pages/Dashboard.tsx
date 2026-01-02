@@ -429,6 +429,39 @@ export default function Dashboard() {
             right={<Pill>Orçamento</Pill>}
             className="lg:col-span-4"
           >
+            {spentPieData.length > 0 && (
+              <div className="h-48 mb-6 -mt-2">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={spentPieData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={50}
+                      outerRadius={70}
+                      paddingAngle={2}
+                      dataKey="value"
+                      stroke="none"
+                    >
+                      {spentPieData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={chartColors[index % chartColors.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(value: number) => fmt(value)}
+                      contentStyle={{
+                        backgroundColor: '#FBFAF7',
+                        borderColor: '#D6D3C8',
+                        borderRadius: '12px',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                      }}
+                      itemStyle={{ color: '#111827', fontFamily: 'ui-serif, Georgia, serif' }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
             {topUsage.length === 0 ? (
               <div className="text-sm text-[#6B7280]">Sem dados ainda. Registre transações para ver consumo por categoria.</div>
             ) : (
@@ -521,12 +554,6 @@ export default function Dashboard() {
 
               {/* GRÁFICOS DE PIZZA (Mantidos como estavam) */}
               <div className="h-40 flex items-center justify-center">
-                 {/* Placeholder for charts if needed, or remove this div if layout breaks. 
-                     Original file had more content below, let's keep Card structure valid.
-                     The original file had more content inside this Card, specifically PieCharts. 
-                     I truncated the Read output, so I must be careful not to delete the rest of the file content.
-                     Wait, I am rewriting the whole file. I need to make sure I have the rest of the file.
-                 */}
                  <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
