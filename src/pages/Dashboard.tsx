@@ -8,7 +8,7 @@ type BudgetUsage = { category_name: string; limit_amount: number; spent_amount: 
 type Summary = { month: number; year: number; income_amount: number; savings_amount: number; expenses_amount: number }
 type Alert = { id: number; message: string; severity: string }
 type Reserve = { current_amount: number; target_amount: number | null; target_months: number }
-type SavingGoal = { id: number; name: string; target_amount: number | null; allocation_percent: number; is_active: boolean; created_at: string }
+type SavingGoal = { id: number; name: string; target_amount: number | null; allocation_percent: number; is_active: boolean; created_at: string; deadline: string | null }
 type GoalTx = { goal_id: number | null; amount: number }
 type RecurringExpense = {
   amount: number
@@ -83,7 +83,7 @@ export default function Dashboard() {
             supabase.from('transactions').select('amount').eq('user_id', uid).eq('kind', 'aporte_reserva').limit(10000),
             supabase
               .from('saving_goals')
-              .select('id,name,target_amount,allocation_percent,is_active,created_at')
+              .select('id,name,target_amount,allocation_percent,is_active,created_at,deadline')
               .eq('user_id', uid)
               .order('created_at', { ascending: false }),
             supabase
@@ -127,6 +127,7 @@ export default function Dashboard() {
             allocation_percent: Number(row?.allocation_percent ?? 0),
             is_active: Boolean(row?.is_active ?? true),
             created_at: String(row?.created_at ?? ''),
+            deadline: row?.deadline || null,
           }))
         )
         const goalMap: Record<number, number> = {}
@@ -585,8 +586,15 @@ export default function Dashboard() {
                      <div key={goal.id} className="flex items-center gap-4">
                        <div className="flex-1">
                          <div className="flex justify-between text-xs mb-1">
-                           <span className="font-medium text-[#374151]">{goal.name}</span>
-                           <span className="text-[#6B7280]">{fmt(saved)} / {goal.target_amount ? fmt(goal.target_amount) : '—'}</span>
+                          <span className="font-medium text-[#374151]">
+                            {goal.name}
+                            {goal.deadline && (
+                              <span className="ml-1 text-[10px] font-normal text-gray-400">
+                                ({new Date(goal.deadline).toLocaleDateString('pt-BR', { timeZone: 'UTC' })})
+                              </span>
+                            )}
+                          </span>
+                          <span className="text-[#6B7280]">{fmt(saved)} / {goal.target_amount ? fmt(goal.target_amount) : '—'}</span>
                          </div>
                          <div className="h-1.5 w-full rounded-full bg-[#F3F4F6]">
                            <div className="h-full rounded-full bg-[#10B981]" style={{ width: `${pct * 100}%` }} />
