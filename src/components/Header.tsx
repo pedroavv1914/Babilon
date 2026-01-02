@@ -38,9 +38,9 @@ export default function Header({ session }: { session: any }) {
   return (
     <header className="sticky top-0 z-50">
       <div className="bg-[#0B1324] border-b border-[#17233A]">
-        <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex h-16 items-center gap-4">
-            <div className="flex items-center gap-4 shrink-0">
+        <div className="w-full px-4">
+          <div className="flex h-16 items-center justify-between gap-4">
+            <div className="flex items-center gap-4 shrink-0 w-auto xl:w-[280px]">
               <div className="relative h-10 w-10 rounded-xl bg-[#0F172A] border border-[#C2A14D]/50 flex items-center justify-center">
                 <span className="h-2.5 w-2.5 rounded-full bg-[#C2A14D]" />
               </div>
@@ -49,14 +49,14 @@ export default function Header({ session }: { session: any }) {
                 <div className="font-[ui-serif,Georgia,serif] text-lg tracking-[-0.4px] text-[#FBFAF7]">
                   Babilon
                 </div>
-                <div className="text-[11px] text-[#9CA3AF]">
+                <div className="text-[11px] text-[#9CA3AF] hidden sm:block">
                   Sabedoria financeira aplicada
                 </div>
               </div>
             </div>
 
             {session && (
-              <nav className="hidden lg:flex flex-1 items-center justify-center gap-1">
+              <nav className="hidden xl:flex flex-1 items-center justify-center gap-1">
                 {nav.map((item) => (
                   <NavLink
                     key={item.to}
@@ -82,7 +82,7 @@ export default function Header({ session }: { session: any }) {
             )}
 
             {session && (
-              <div className="flex items-center gap-3 shrink-0">
+              <div className="flex items-center justify-end gap-3 shrink-0 w-auto xl:w-[280px]">
                 <div className="hidden sm:flex items-center gap-3 rounded-xl bg-[#0F172A] border border-[#17233A] px-3 py-2">
                   <div className="h-8 w-8 rounded-lg bg-[#0B1324] border border-[#C2A14D]/40 flex items-center justify-center text-xs font-semibold text-[#E7E1D4]">
                     {initials}
@@ -101,7 +101,7 @@ export default function Header({ session }: { session: any }) {
                 </button>
 
                 <button
-                  className="lg:hidden rounded-lg border border-[#17233A] bg-[#0F172A] px-3 py-2 text-sm text-[#E7E1D4]"
+                  className="xl:hidden rounded-lg border border-[#17233A] bg-[#0F172A] px-3 py-2 text-sm text-[#E7E1D4]"
                   onClick={() => setOpen((v) => !v)}
                 >
                   Menu
@@ -113,8 +113,8 @@ export default function Header({ session }: { session: any }) {
       </div>
 
       {session && open && (
-        <div className="lg:hidden bg-[#0B1324]/95 border-b border-[#17233A] backdrop-blur">
-          <div className="w-full max-w-6xl mx-auto px-4 sm:px-6">
+        <div className="xl:hidden bg-[#0B1324]/95 border-b border-[#17233A] backdrop-blur">
+          <div className="w-full px-4">
             <div className="py-3">
               <div className="rounded-xl bg-[#0F172A] border border-[#17233A] p-2 space-y-1">
                 {nav.map((item) => (
