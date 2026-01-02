@@ -13,27 +13,48 @@ type RecurringExpense = {
   is_active: boolean
 }
 
+type InstallmentExpense = {
+  id: number
+  user_id: string
+  name: string
+  amount: number
+  total_installments: number
+  start_date: string // YYYY-MM-DD
+  category_id: number | null
+}
+
 type Category = {
   id: number
   name: string
 }
 
 export default function Recurring() {
+  const [activeTab, setActiveTab] = useState<'recurring' | 'installments'>('recurring')
+  
   const [items, setItems] = useState<RecurringExpense[]>([])
+  const [installments, setInstallments] = useState<InstallmentExpense[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
-  const [itemToDelete, setItemToDelete] = useState<number | null>(null)
+  const [itemToDelete, setItemToDelete] = useState<{ id: number; type: 'recurring' | 'installment' } | null>(null)
 
-  // New item form
-  const [newName, setNewName] = useState('')
-  const [newAmount, setNewAmount] = useState('')
-  const [newFrequency, setNewFrequency] = useState<'monthly' | 'weekly' | 'yearly'>('monthly')
-  const [newOccurrences, setNewOccurrences] = useState('1')
-  const [newCategoryId, setNewCategoryId] = useState<string>('')
+  // Recurring form
+  const [recName, setRecName] = useState('')
+  const [recAmount, setRecAmount] = useState('')
+  const [recFrequency, setRecFrequency] = useState<'monthly' | 'weekly' | 'yearly'>('monthly')
+  const [recOccurrences, setRecOccurrences] = useState('1')
+  const [recCategoryId, setRecCategoryId] = useState<string>('')
+
+  // Installment form
+  const [instName, setInstName] = useState('')
+  const [instAmount, setInstAmount] = useState('')
+  const [instTotal, setInstTotal] = useState('')
+  const [instStartDate, setInstStartDate] = useState(new Date().toISOString().split('T')[0])
+  const [instCategoryId, setInstCategoryId] = useState<string>('')
 
   const fmt = useMemo(() => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }), [])
 
@@ -44,9 +65,18 @@ export default function Recurring() {
       const uid = await getUserId()
       if (!uid) return
 
-      const [{ data: recData, error: recErr }, { data: catData, error: catErr }] = await Promise.all([
+      const [
+        { data: recData, error: recErr },
+        { data: instData, error: instErr },
+        { data: catData, error: catErr }
+      ] = await Promise.all([
         supabase
           .from('recurring_expenses')
+          .select('*')
+          .eq('user_id', uid)
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('installment_expenses')
           .select('*')
           .eq('user_id', uid)
           .order('created_at', { ascending: false }),
@@ -54,6 +84,7 @@ export default function Recurring() {
       ])
 
       if (recErr) throw recErr
+      if (instErr) throw instErr
       if (catErr) throw catErr
 
       setItems(
@@ -61,6 +92,13 @@ export default function Recurring() {
           ...i,
           amount: Number(i.amount),
           occurrences: Number(i.occurrences),
+        }))
+      )
+      setInstallments(
+        (instData || []).map((i: any) => ({
+          ...i,
+          amount: Number(i.amount),
+          total_installments: Number(i.total_installments),
         }))
       )
       setCategories(catData || [])
@@ -82,17 +120,17 @@ export default function Recurring() {
     }
   }, [notice])
 
-  const handleAdd = async () => {
-    if (!newName.trim()) {
+  const handleAddRecurring = async () => {
+    if (!recName.trim()) {
       setError('Informe o nome da despesa.')
       return
     }
-    const amt = Number(newAmount)
+    const amt = Number(recAmount)
     if (!Number.isFinite(amt) || amt <= 0) {
       setError('Informe um valor válido.')
       return
     }
-    const occ = Number(newOccurrences)
+    const occ = Number(recOccurrences)
     if (!Number.isFinite(occ) || occ < 1) {
       setError('Informe a quantidade de ocorrências.')
       return
@@ -104,20 +142,20 @@ export default function Recurring() {
       const uid = await getUserId()
       const { error } = await supabase.from('recurring_expenses').insert({
         user_id: uid,
-        name: newName.trim(),
+        name: recName.trim(),
         amount: amt,
-        frequency: newFrequency,
+        frequency: recFrequency,
         occurrences: occ,
-        category_id: newCategoryId ? Number(newCategoryId) : null,
+        category_id: recCategoryId ? Number(recCategoryId) : null,
         is_active: true,
       })
 
       if (error) throw error
       setNotice('Despesa recorrente adicionada.')
-      setNewName('')
-      setNewAmount('')
-      setNewOccurrences('1')
-      setNewCategoryId('')
+      setRecName('')
+      setRecAmount('')
+      setRecOccurrences('1')
+      setRecCategoryId('')
       await load()
     } catch (e: any) {
       setError(e.message || 'Erro ao salvar.')
@@ -126,8 +164,56 @@ export default function Recurring() {
     }
   }
 
-  const confirmDelete = (id: number) => {
-    setItemToDelete(id)
+  const handleAddInstallment = async () => {
+    if (!instName.trim()) {
+      setError('Informe o nome do parcelamento.')
+      return
+    }
+    const amt = Number(instAmount)
+    if (!Number.isFinite(amt) || amt <= 0) {
+      setError('Informe o valor da parcela.')
+      return
+    }
+    const total = Number(instTotal)
+    if (!Number.isFinite(total) || total < 1) {
+      setError('Informe o total de parcelas.')
+      return
+    }
+    if (!instStartDate) {
+      setError('Informe a data de início.')
+      return
+    }
+
+    setSaving(true)
+    setError(null)
+    try {
+      const uid = await getUserId()
+      const { error } = await supabase.from('installment_expenses').insert({
+        user_id: uid,
+        name: instName.trim(),
+        amount: amt,
+        total_installments: total,
+        start_date: instStartDate,
+        category_id: instCategoryId ? Number(instCategoryId) : null,
+      })
+
+      if (error) throw error
+      setNotice('Parcelamento adicionado.')
+      setInstName('')
+      setInstAmount('')
+      setInstTotal('')
+      setInstStartDate(new Date().toISOString().split('T')[0])
+      setInstCategoryId('')
+      await load()
+    } catch (e: any) {
+      setError(e.message || 'Erro ao salvar.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const confirmDelete = (id: number, type: 'recurring' | 'installment') => {
+    setItemToDelete({ id, type })
     setDeleteModalOpen(true)
   }
 
@@ -135,9 +221,16 @@ export default function Recurring() {
     if (!itemToDelete) return
     setSaving(true)
     try {
-      const { error } = await supabase.from('recurring_expenses').delete().eq('id', itemToDelete)
+      const table = itemToDelete.type === 'recurring' ? 'recurring_expenses' : 'installment_expenses'
+      const { error } = await supabase.from(table).delete().eq('id', itemToDelete.id)
       if (error) throw error
-      setItems((prev) => prev.filter((i) => i.id !== itemToDelete))
+      
+      if (itemToDelete.type === 'recurring') {
+        setItems((prev) => prev.filter((i) => i.id !== itemToDelete.id))
+      } else {
+        setInstallments((prev) => prev.filter((i) => i.id !== itemToDelete.id))
+      }
+      
       setNotice('Removido com sucesso.')
       setDeleteModalOpen(false)
       setItemToDelete(null)
@@ -162,7 +255,38 @@ export default function Recurring() {
     }
   }
 
-  const totalMonthlyEstimate = useMemo(() => {
+  const getInstallmentProgress = (item: InstallmentExpense) => {
+    const start = new Date(item.start_date)
+    const now = new Date()
+    // Calculate month difference
+    const diffMonths = (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth())
+    
+    // Installment number (1-based)
+    // If diffMonths is 0 (same month), it's installment 1.
+    // If diffMonths < 0, it hasn't started yet (0).
+    let current = diffMonths + 1
+    
+    if (current < 1) current = 0
+    if (current > item.total_installments) current = item.total_installments
+    
+    // Status
+    let status = 'active'
+    if (current === 0) status = 'future'
+    if (current >= item.total_installments && diffMonths >= item.total_installments) status = 'completed' // Actually finished last month or before
+
+    // If current == total, it's the last one. If diffMonths >= total, it's really over.
+    // Let's refine:
+    // Mês 1: diff 0, current 1
+    // ...
+    // Mês 10: diff 9, current 10 (Last one)
+    // Mês 11: diff 10, current 10 (Finished) -> status completed
+    
+    const isCompleted = diffMonths >= item.total_installments
+    
+    return { current, status, isCompleted }
+  }
+
+  const totalMonthlyRecurring = useMemo(() => {
     return items
       .filter((i) => i.is_active)
       .reduce((acc, i) => {
@@ -173,7 +297,17 @@ export default function Recurring() {
       }, 0)
   }, [items])
 
-  if (loading && items.length === 0) {
+  const totalMonthlyInstallments = useMemo(() => {
+    return installments.reduce((acc, i) => {
+      const { status, isCompleted } = getInstallmentProgress(i)
+      if (status !== 'future' && !isCompleted) {
+        return acc + i.amount
+      }
+      return acc
+    }, 0)
+  }, [installments])
+
+  if (loading && items.length === 0 && installments.length === 0) {
     return (
       <div className="mt-8">
         <div className="rounded-2xl border border-[#D6D3C8] bg-[#FBFAF7] p-5 text-sm text-[#6B7280] shadow-[0_10px_30px_rgba(11,19,36,0.10)]">
@@ -195,18 +329,47 @@ export default function Recurring() {
                 </div>
                 <div>
                   <div className="font-[ui-serif,Georgia,serif] text-2xl tracking-[-0.6px] text-[#111827]">
-                    Despesas Recorrentes
+                    Pagamentos Recorrentes
                   </div>
                   <div className="mt-1 text-xs text-[#6B7280]">
-                    Gerencie gastos fixos e frequentes (assinaturas, serviços, etc).
+                    Gerencie gastos fixos, assinaturas e parcelamentos.
                   </div>
                 </div>
               </div>
             </div>
             <div className="text-right">
-              <div className="text-xs text-[#6B7280]">Estimativa Mensal</div>
-              <div className="text-xl font-semibold text-[#111827]">{fmt.format(totalMonthlyEstimate)}</div>
+              <div className="text-xs text-[#6B7280]">Total Mensal Estimado</div>
+              <div className="text-xl font-semibold text-[#111827]">
+                {fmt.format(totalMonthlyRecurring + totalMonthlyInstallments)}
+              </div>
+              <div className="text-[10px] text-gray-400 mt-0.5">
+                (Fixos: {fmt.format(totalMonthlyRecurring)} + Parcelas: {fmt.format(totalMonthlyInstallments)})
+              </div>
             </div>
+          </div>
+          
+          {/* Tabs */}
+          <div className="mt-6 flex space-x-1 rounded-xl bg-gray-100 p-1 w-fit">
+            <button
+              onClick={() => setActiveTab('recurring')}
+              className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-all ${
+                activeTab === 'recurring'
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Despesas Fixas
+            </button>
+            <button
+              onClick={() => setActiveTab('installments')}
+              className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-all ${
+                activeTab === 'installments'
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Parcelamentos
+            </button>
           </div>
         </div>
         <div
@@ -229,157 +392,308 @@ export default function Recurring() {
         </div>
       )}
 
-      {/* Add Form */}
-      <div className="rounded-2xl border border-[#E4E1D6] bg-white p-5 shadow-[0_10px_30px_rgba(11,19,36,0.06)]">
-        <div className="font-semibold text-[#111827] mb-4">Nova Despesa Recorrente</div>
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
-          <div className="md:col-span-3">
-            <label className="block text-xs text-[#6B7280] mb-1">Nome</label>
-            <input
-              type="text"
-              className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
-              placeholder="Ex: Corte de cabelo"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              disabled={saving}
-            />
+      {/* Content based on tab */}
+      {activeTab === 'recurring' ? (
+        <div className="space-y-6">
+          {/* Add Form Recurring */}
+          <div className="rounded-2xl border border-[#E4E1D6] bg-white p-5 shadow-[0_10px_30px_rgba(11,19,36,0.06)]">
+            <div className="font-semibold text-[#111827] mb-4">Nova Despesa Fixa</div>
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+              <div className="md:col-span-3">
+                <label className="block text-xs text-[#6B7280] mb-1">Nome</label>
+                <input
+                  type="text"
+                  className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
+                  placeholder="Ex: Aluguel"
+                  value={recName}
+                  onChange={(e) => setRecName(e.target.value)}
+                  disabled={saving}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-xs text-[#6B7280] mb-1">Valor Unitário</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
+                  placeholder="0,00"
+                  value={recAmount}
+                  onChange={(e) => setRecAmount(e.target.value)}
+                  disabled={saving}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-xs text-[#6B7280] mb-1">Frequência</label>
+                <select
+                  className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
+                  value={recFrequency}
+                  onChange={(e) => setRecFrequency(e.target.value as any)}
+                  disabled={saving}
+                >
+                  <option value="monthly">Mensal</option>
+                  <option value="weekly">Semanal</option>
+                  <option value="yearly">Anual</option>
+                </select>
+              </div>
+              <div className="md:col-span-1">
+                <label className="block text-xs text-[#6B7280] mb-1">Vezes</label>
+                <input
+                  type="number"
+                  min="1"
+                  className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
+                  value={recOccurrences}
+                  onChange={(e) => setRecOccurrences(e.target.value)}
+                  disabled={saving}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-xs text-[#6B7280] mb-1">Categoria</label>
+                <select
+                  className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
+                  value={recCategoryId}
+                  onChange={(e) => setRecCategoryId(e.target.value)}
+                  disabled={saving}
+                >
+                  <option value="">Sem categoria</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="md:col-span-2">
+                <button
+                  onClick={handleAddRecurring}
+                  disabled={saving}
+                  className="w-full rounded-xl bg-[#111827] px-3 py-2 text-sm text-white hover:bg-black disabled:opacity-60 transition-colors"
+                >
+                  {saving ? 'Adicionando...' : 'Adicionar'}
+                </button>
+              </div>
+            </div>
           </div>
-          <div className="md:col-span-2">
-            <label className="block text-xs text-[#6B7280] mb-1">Valor Unitário</label>
-            <input
-              type="number"
-              step="0.01"
-              className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
-              placeholder="0,00"
-              value={newAmount}
-              onChange={(e) => setNewAmount(e.target.value)}
-              disabled={saving}
-            />
-          </div>
-          <div className="md:col-span-2">
-            <label className="block text-xs text-[#6B7280] mb-1">Frequência</label>
-            <select
-              className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
-              value={newFrequency}
-              onChange={(e) => setNewFrequency(e.target.value as any)}
-              disabled={saving}
-            >
-              <option value="monthly">Mensal</option>
-              <option value="weekly">Semanal</option>
-              <option value="yearly">Anual</option>
-            </select>
-          </div>
-          <div className="md:col-span-1">
-            <label className="block text-xs text-[#6B7280] mb-1">Vezes</label>
-            <input
-              type="number"
-              min="1"
-              className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
-              value={newOccurrences}
-              onChange={(e) => setNewOccurrences(e.target.value)}
-              disabled={saving}
-            />
-          </div>
-          <div className="md:col-span-2">
-            <label className="block text-xs text-[#6B7280] mb-1">Categoria</label>
-            <select
-              className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
-              value={newCategoryId}
-              onChange={(e) => setNewCategoryId(e.target.value)}
-              disabled={saving}
-            >
-              <option value="">Sem categoria</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="md:col-span-2">
-            <button
-              onClick={handleAdd}
-              disabled={saving}
-              className="w-full rounded-xl bg-[#111827] px-3 py-2 text-sm text-white hover:bg-black disabled:opacity-60 transition-colors"
-            >
-              {saving ? 'Adicionando...' : 'Adicionar'}
-            </button>
-          </div>
-        </div>
-        <div className="mt-2 text-xs text-[#6B7280]">
-          Ex: "Corte de cabelo", R$ 50,00, Mensal, 4 vezes = R$ 200,00/mês.
-        </div>
-      </div>
 
-      {/* List */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {items.map((item) => (
-          <div
-            key={item.id}
-            className={`rounded-xl border ${
-              item.is_active ? 'border-[#E4E1D6] bg-white' : 'border-gray-200 bg-gray-50 opacity-75'
-            } p-4 shadow-sm transition-all hover:shadow-md`}
-          >
-            <div className="flex justify-between items-start mb-2">
-              <h3 className="font-medium text-[#111827]">{item.name}</h3>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => handleToggleActive(item)}
-                  className={`text-xs px-2 py-0.5 rounded-full border ${
-                    item.is_active
-                      ? 'bg-green-50 text-green-700 border-green-200'
-                      : 'bg-gray-100 text-gray-500 border-gray-200'
-                  }`}
-                >
-                  {item.is_active ? 'Ativo' : 'Inativo'}
-                </button>
-                <button
-                  onClick={() => confirmDelete(item.id)}
-                  className="text-gray-400 hover:text-red-500 transition-colors"
-                  title="Remover"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c0 1 1 2 2 2v2"/></svg>
-                </button>
+          {/* List Recurring */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {items.map((item) => (
+              <div
+                key={item.id}
+                className={`rounded-xl border ${
+                  item.is_active ? 'border-[#E4E1D6] bg-white' : 'border-gray-200 bg-gray-50 opacity-75'
+                } p-4 shadow-sm transition-all hover:shadow-md`}
+              >
+                <div className="flex justify-between items-start mb-2">
+                  <h3 className="font-medium text-[#111827]">{item.name}</h3>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleToggleActive(item)}
+                      className={`text-xs px-2 py-0.5 rounded-full border ${
+                        item.is_active
+                          ? 'bg-green-50 text-green-700 border-green-200'
+                          : 'bg-gray-100 text-gray-500 border-gray-200'
+                      }`}
+                    >
+                      {item.is_active ? 'Ativo' : 'Inativo'}
+                    </button>
+                    <button
+                      onClick={() => confirmDelete(item.id, 'recurring')}
+                      className="text-gray-400 hover:text-red-500 transition-colors"
+                      title="Remover"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c0 1 1 2 2 2v2"/></svg>
+                    </button>
+                  </div>
+                </div>
+                
+                <div className="space-y-1">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Valor un.:</span>
+                    <span className="font-medium">{fmt.format(item.amount)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Frequência:</span>
+                    <span>
+                      {item.frequency === 'monthly' ? 'Mensal' : item.frequency === 'weekly' ? 'Semanal' : 'Anual'}
+                      {item.occurrences > 1 ? ` (${item.occurrences}x)` : ''}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm pt-2 border-t border-dashed border-gray-200 mt-2">
+                    <span className="text-gray-500">Total/mês (est.):</span>
+                    <span className="font-semibold text-[#059669]">
+                      {fmt.format(
+                        item.amount *
+                          item.occurrences *
+                          (item.frequency === 'weekly' ? 4 : item.frequency === 'yearly' ? 1 / 12 : 1)
+                      )}
+                    </span>
+                  </div>
+                </div>
+                {item.category_id && (
+                  <div className="mt-3 text-xs text-gray-400 bg-gray-50 inline-block px-2 py-1 rounded">
+                    {categories.find((c) => c.id === item.category_id)?.name || 'Categoria removida'}
+                  </div>
+                )}
               </div>
-            </div>
-            
-            <div className="space-y-1">
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Valor un.:</span>
-                <span className="font-medium">{fmt.format(item.amount)}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Frequência:</span>
-                <span>
-                  {item.frequency === 'monthly' ? 'Mensal' : item.frequency === 'weekly' ? 'Semanal' : 'Anual'}
-                  {item.occurrences > 1 ? ` (${item.occurrences}x)` : ''}
-                </span>
-              </div>
-              <div className="flex justify-between text-sm pt-2 border-t border-dashed border-gray-200 mt-2">
-                <span className="text-gray-500">Total/mês (est.):</span>
-                <span className="font-semibold text-[#059669]">
-                  {fmt.format(
-                    item.amount *
-                      item.occurrences *
-                      (item.frequency === 'weekly' ? 4 : item.frequency === 'yearly' ? 1 / 12 : 1)
-                  )}
-                </span>
-              </div>
-            </div>
-            {item.category_id && (
-              <div className="mt-3 text-xs text-gray-400 bg-gray-50 inline-block px-2 py-1 rounded">
-                {categories.find((c) => c.id === item.category_id)?.name || 'Categoria removida'}
+            ))}
+            {items.length === 0 && !loading && (
+              <div className="col-span-full text-center py-10 text-gray-400 bg-white rounded-xl border border-dashed border-[#D6D3C8]">
+                Nenhuma despesa fixa cadastrada.
               </div>
             )}
           </div>
-        ))}
-        
-        {items.length === 0 && !loading && (
-          <div className="col-span-full text-center py-10 text-gray-400 bg-white rounded-xl border border-dashed border-[#D6D3C8]">
-            Nenhuma despesa recorrente cadastrada.
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {/* Add Form Installment */}
+          <div className="rounded-2xl border border-[#E4E1D6] bg-white p-5 shadow-[0_10px_30px_rgba(11,19,36,0.06)]">
+            <div className="font-semibold text-[#111827] mb-4">Novo Parcelamento</div>
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+              <div className="md:col-span-3">
+                <label className="block text-xs text-[#6B7280] mb-1">Nome</label>
+                <input
+                  type="text"
+                  className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
+                  placeholder="Ex: Compra TV"
+                  value={instName}
+                  onChange={(e) => setInstName(e.target.value)}
+                  disabled={saving}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-xs text-[#6B7280] mb-1">Valor Parcela</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
+                  placeholder="0,00"
+                  value={instAmount}
+                  onChange={(e) => setInstAmount(e.target.value)}
+                  disabled={saving}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-xs text-[#6B7280] mb-1">Qtd. Parcelas</label>
+                <input
+                  type="number"
+                  min="1"
+                  className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
+                  placeholder="12"
+                  value={instTotal}
+                  onChange={(e) => setInstTotal(e.target.value)}
+                  disabled={saving}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-xs text-[#6B7280] mb-1">Início</label>
+                <input
+                  type="date"
+                  className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
+                  value={instStartDate}
+                  onChange={(e) => setInstStartDate(e.target.value)}
+                  disabled={saving}
+                />
+              </div>
+              <div className="md:col-span-3">
+                <label className="block text-xs text-[#6B7280] mb-1">Categoria</label>
+                <div className="flex gap-2">
+                  <select
+                    className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
+                    value={instCategoryId}
+                    onChange={(e) => setInstCategoryId(e.target.value)}
+                    disabled={saving}
+                  >
+                    <option value="">Sem categoria</option>
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={handleAddInstallment}
+                    disabled={saving}
+                    className="rounded-xl bg-[#111827] px-4 py-2 text-sm text-white hover:bg-black disabled:opacity-60 transition-colors"
+                  >
+                    {saving ? '...' : 'Add'}
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
-        )}
-      </div>
+
+          {/* List Installments */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {installments.map((item) => {
+              const { current, status, isCompleted } = getInstallmentProgress(item)
+              
+              // Progress percent
+              const progress = Math.min(100, Math.max(0, (current / item.total_installments) * 100))
+              
+              return (
+                <div
+                  key={item.id}
+                  className={`rounded-xl border ${
+                    isCompleted ? 'border-gray-200 bg-gray-50 opacity-75' : 'border-[#E4E1D6] bg-white'
+                  } p-4 shadow-sm transition-all hover:shadow-md`}
+                >
+                  <div className="flex justify-between items-start mb-3">
+                    <h3 className="font-medium text-[#111827]">{item.name}</h3>
+                    <div className="flex gap-2">
+                      <span className={`text-xs px-2 py-0.5 rounded-full border ${
+                        status === 'active' 
+                          ? 'bg-blue-50 text-blue-700 border-blue-200'
+                          : status === 'future'
+                            ? 'bg-yellow-50 text-yellow-700 border-yellow-200'
+                            : 'bg-gray-100 text-gray-500 border-gray-200'
+                      }`}>
+                        {status === 'active' ? 'Em andamento' : status === 'future' ? 'Agendado' : 'Concluído'}
+                      </span>
+                      <button
+                        onClick={() => confirmDelete(item.id, 'installment')}
+                        className="text-gray-400 hover:text-red-500 transition-colors"
+                        title="Remover"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c0 1 1 2 2 2v2"/></svg>
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-end">
+                      <div className="text-2xl font-semibold text-[#111827]">{fmt.format(item.amount)}</div>
+                      <div className="text-sm text-gray-500 mb-1">/mês</div>
+                    </div>
+                    
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs text-gray-500">
+                        <span>Progresso</span>
+                        <span>{current} / {item.total_installments}</span>
+                      </div>
+                      <div className="h-2 w-full rounded-full bg-gray-100 overflow-hidden">
+                        <div 
+                          className={`h-full rounded-full ${isCompleted ? 'bg-green-500' : 'bg-[#C2A14D]'}`} 
+                          style={{ width: `${progress}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex justify-between text-xs text-gray-400 pt-2 border-t border-dashed border-gray-200">
+                      <span>Total: {fmt.format(item.amount * item.total_installments)}</span>
+                      <span>Início: {new Date(item.start_date).toLocaleDateString('pt-BR')}</span>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+            {installments.length === 0 && !loading && (
+              <div className="col-span-full text-center py-10 text-gray-400 bg-white rounded-xl border border-dashed border-[#D6D3C8]">
+                Nenhum parcelamento cadastrado.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       
       {/* Delete Confirmation Modal */}
       {deleteModalOpen && (
@@ -387,7 +701,7 @@ export default function Recurring() {
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
             <h3 className="text-lg font-semibold text-[#111827]">Confirmar exclusão</h3>
             <p className="mt-2 text-sm text-[#6B7280]">
-              Tem certeza que deseja remover esta despesa recorrente? Essa ação não pode ser desfeita.
+              Tem certeza que deseja remover este item? Essa ação não pode ser desfeita.
             </p>
             <div className="mt-6 flex justify-end gap-3">
               <button
