@@ -10,6 +10,7 @@ import Budgets from './pages/Budgets'
 import Transactions from './pages/Transactions'
 import Investments from './pages/Investments'
 import Incomes from './pages/Incomes'
+import Recurring from './pages/Recurring'
 import { useEffect, useState } from 'react'
 import { supabase } from './lib/supabaseClient'
 
@@ -69,6 +70,7 @@ function App() {
           <Route path="/categories" element={session ? <Categories /> : <Navigate to="/login" replace />} />
           <Route path="/budgets" element={session ? <Budgets /> : <Navigate to="/login" replace />} />
           <Route path="/transactions" element={session ? <Transactions /> : <Navigate to="/login" replace />} />
+          <Route path="/recurring" element={session ? <Recurring /> : <Navigate to="/login" replace />} />
           <Route path="/investments" element={session ? <Investments /> : <Navigate to="/login" replace />} />
         </Routes>
       </main>
