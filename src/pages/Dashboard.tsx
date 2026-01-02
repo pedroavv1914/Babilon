@@ -10,6 +10,11 @@ type Alert = { id: number; message: string; severity: string }
 type Reserve = { current_amount: number; target_amount: number | null; target_months: number }
 type SavingGoal = { id: number; name: string; target_amount: number | null; allocation_percent: number; is_active: boolean; created_at: string }
 type GoalTx = { goal_id: number | null; amount: number }
+type RecurringExpense = {
+  amount: number
+  frequency: 'monthly' | 'weekly' | 'yearly'
+  occurrences: number
+}
 
 export default function Dashboard() {
   const [usage, setUsage] = useState<BudgetUsage[]>([])
@@ -19,6 +24,7 @@ export default function Dashboard() {
   const [reserve, setReserve] = useState<Reserve | null>(null)
   const [goals, setGoals] = useState<SavingGoal[]>([])
   const [goalSavedById, setGoalSavedById] = useState<Record<number, number>>({})
+  const [recurringTotal, setRecurringTotal] = useState<number>(0)
 
   const now = new Date()
   const [month, setMonth] = useState(now.getMonth() + 1)
@@ -33,7 +39,7 @@ export default function Dashboard() {
         const uid = await getUserId()
         if (!uid || !mounted) return
 
-        const [{ data: u }, { data: s }, { data: a }, { data: r }, { data: reserveTx }, { data: g, error: gErr }, { data: tx, error: txErr }] =
+        const [{ data: u }, { data: s }, { data: a }, { data: r }, { data: reserveTx }, { data: g, error: gErr }, { data: tx, error: txErr }, { data: rec }] =
           await Promise.all([
             supabase
               .from('vw_budget_usage')
@@ -72,6 +78,11 @@ export default function Dashboard() {
             .eq('kind', 'aporte_meta')
             .not('goal_id', 'is', null)
             .limit(5000),
+          supabase
+            .from('recurring_expenses')
+            .select('amount,frequency,occurrences')
+            .eq('user_id', uid)
+            .eq('is_active', true),
           ])
         if (gErr) throw gErr
         if (txErr) throw txErr
@@ -106,6 +117,16 @@ export default function Dashboard() {
           goalMap[gid] = (goalMap[gid] ?? 0) + Math.max(0, Number((t as any).amount ?? 0))
         }
         setGoalSavedById(goalMap)
+
+        const recTotal = (rec || []).reduce((acc: number, item: any) => {
+          const amt = Number(item.amount ?? 0)
+          const occ = Number(item.occurrences ?? 1)
+          let mult = 1
+          if (item.frequency === 'weekly') mult = 4
+          if (item.frequency === 'yearly') mult = 1 / 12
+          return acc + amt * occ * mult
+        }, 0)
+        setRecurringTotal(recTotal)
       } finally {
         if (mounted) setLoading(false)
       }
@@ -118,6 +139,7 @@ export default function Dashboard() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => load())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'saving_goals' }, () => load())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'emergency_reserve' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'recurring_expenses' }, () => load())
       .subscribe()
 
     return () => {
@@ -342,8 +364,14 @@ export default function Dashboard() {
         </div>
 
         {/* STATS */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           <Stat label="Renda do mês" value={fmt(income)} hint="Entrada total do ciclo" />
+          <Stat
+            label="Fixo mensal"
+            value={fmt(recurringTotal)}
+            hint={income > 0 ? `${Math.round((recurringTotal / income) * 100)}% da renda` : 'Estimativa mensal'}
+            tone="neutral"
+          />
           <Stat
             label="Ouro guardado"
             value={fmt(reserveCurrent)}
