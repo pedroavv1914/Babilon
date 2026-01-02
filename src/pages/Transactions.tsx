@@ -7,7 +7,7 @@ import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
 type Category = { id: number; name: string }
 type Alert = { id: number; type: string; severity: string; message: string; created_at: string }
 type TransactionKind = 'despesa' | 'aporte_reserva' | 'aporte_meta' | 'pagamento_cartao'
-type TxRow = { id: number; amount: number; kind: TransactionKind; occurred_at: string; category_id: number | null; goal_id: number | null }
+type TxRow = { id: number; amount: number; kind: TransactionKind; occurred_at: string; category_id: number | null; goal_id: number | null; note: string | null }
 type BudgetRow = { category_id: number; limit_amount: number }
 type GoalLite = { id: number; name: string }
 
@@ -18,6 +18,7 @@ export default function Transactions() {
   const [goalId, setGoalId] = useState<number | null>(null)
   const [amount, setAmount] = useState<number>(0)
   const [kind, setKind] = useState<TransactionKind>('despesa')
+  const [note, setNote] = useState<string>('')
   const [date, setDate] = useState<string>(new Date().toISOString().slice(0, 10))
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [items, setItems] = useState<TxRow[]>([])
@@ -178,7 +179,7 @@ export default function Transactions() {
       const endISO = new Date(Date.UTC(filterYear, filterMonth, 1)).toISOString()
       const { data: tx, error: txError } = await supabase
         .from('transactions')
-        .select('id,amount,kind,occurred_at,category_id,goal_id')
+        .select('id,amount,kind,occurred_at,category_id,goal_id,note')
         .eq('user_id', uid)
         .gte('occurred_at', startISO)
         .lt('occurred_at', endISO)
@@ -202,6 +203,7 @@ export default function Transactions() {
           occurred_at: String(t.occurred_at ?? ''),
           category_id: t.category_id === null || t.category_id === undefined ? null : Number(t.category_id),
           goal_id: t.goal_id === null || t.goal_id === undefined ? null : Number(t.goal_id),
+          note: t.note ? String(t.note) : null,
         }))
       )
       setDataMonth(filterMonth)
@@ -259,12 +261,13 @@ export default function Transactions() {
       setError('Informe um valor maior que zero.')
       return
     }
-    const payload: any = { user_id: uid, amount, kind, occurred_at: date }
+    const payload: any = { user_id: uid, amount, kind, occurred_at: date, note: note || null }
     if (kind === 'despesa' && categoryId) payload.category_id = categoryId
     if (kind === 'aporte_meta' && goalId) payload.goal_id = goalId
     const { error } = await supabase.from('transactions').insert(payload)
     if (error) setError(error.message)
     setAmount(0)
+    setNote('')
     setKind('despesa')
     setCategoryId(null)
     setGoalId(null)
@@ -453,6 +456,18 @@ export default function Transactions() {
               </div>
             )}
 
+            <div>
+              <label className="block text-xs text-[#6B7280] mb-1">Nome / Descrição (Opcional)</label>
+              <input
+                className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
+                type="text"
+                placeholder="Ex.: Jantar, Uber, Supermercado..."
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                disabled={loading}
+              />
+            </div>
+
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="block text-xs text-[#6B7280] mb-1">Data</label>
@@ -602,7 +617,8 @@ export default function Transactions() {
                           </span>
                           <span className="text-[11px] text-[#6B7280]">{dateLabel}</span>
                         </div>
-                        <div className="mt-1 text-sm font-medium text-[#111827] truncate">{cat}</div>
+                        <div className="mt-1 text-sm font-medium text-[#111827] truncate">{t.note || cat}</div>
+                        {t.note && <div className="text-xs text-[#6B7280] truncate">{cat}</div>}
                       </div>
                       <div className="flex items-center gap-3">
                         <div className="text-sm font-semibold text-[#111827]">{fmt.format(Number(t.amount ?? 0))}</div>
