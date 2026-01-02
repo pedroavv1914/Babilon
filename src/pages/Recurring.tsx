@@ -25,6 +25,8 @@ export default function Recurring() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [itemToDelete, setItemToDelete] = useState<number | null>(null)
 
   // New item form
   const [newName, setNewName] = useState('')
@@ -124,14 +126,21 @@ export default function Recurring() {
     }
   }
 
-  const handleDelete = async (id: number) => {
-    if (!confirm('Tem certeza que deseja remover?')) return
+  const confirmDelete = (id: number) => {
+    setItemToDelete(id)
+    setDeleteModalOpen(true)
+  }
+
+  const handleDelete = async () => {
+    if (!itemToDelete) return
     setSaving(true)
     try {
-      const { error } = await supabase.from('recurring_expenses').delete().eq('id', id)
+      const { error } = await supabase.from('recurring_expenses').delete().eq('id', itemToDelete)
       if (error) throw error
-      setItems((prev) => prev.filter((i) => i.id !== id))
+      setItems((prev) => prev.filter((i) => i.id !== itemToDelete))
       setNotice('Removido com sucesso.')
+      setDeleteModalOpen(false)
+      setItemToDelete(null)
     } catch (e: any) {
       setError(e.message)
     } finally {
@@ -325,7 +334,7 @@ export default function Recurring() {
                   {item.is_active ? 'Ativo' : 'Inativo'}
                 </button>
                 <button
-                  onClick={() => handleDelete(item.id)}
+                  onClick={() => confirmDelete(item.id)}
                   className="text-gray-400 hover:text-red-500 transition-colors"
                   title="Remover"
                 >
@@ -371,6 +380,37 @@ export default function Recurring() {
           </div>
         )}
       </div>
+      
+      {/* Delete Confirmation Modal */}
+      {deleteModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-semibold text-[#111827]">Confirmar exclusão</h3>
+            <p className="mt-2 text-sm text-[#6B7280]">
+              Tem certeza que deseja remover esta despesa recorrente? Essa ação não pode ser desfeita.
+            </p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setDeleteModalOpen(false)
+                  setItemToDelete(null)
+                }}
+                className="rounded-xl border border-[#D6D3C8] bg-white px-4 py-2 text-sm font-medium text-[#374151] hover:bg-gray-50"
+                disabled={saving}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleDelete}
+                className="rounded-xl bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
+                disabled={saving}
+              >
+                {saving ? 'Excluindo...' : 'Excluir'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
