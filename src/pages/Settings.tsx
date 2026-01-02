@@ -19,6 +19,7 @@ type SavingGoal = {
   allocation_percent: number
   is_active: boolean
   is_primary: boolean
+  deadline: string | null
   created_at: string
 }
 type TxHistoryItem = {
@@ -45,6 +46,7 @@ export default function Settings() {
   const [newGoalName, setNewGoalName] = useState('')
   const [newGoalTarget, setNewGoalTarget] = useState<number | ''>('')
   const [newGoalPercent, setNewGoalPercent] = useState<number | ''>('')
+  const [newGoalDeadline, setNewGoalDeadline] = useState<string>('')
   const [newGoalActive, setNewGoalActive] = useState(true)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -98,7 +100,7 @@ export default function Settings() {
           .limit(6),
         supabase
           .from('saving_goals')
-          .select('id,user_id,name,target_amount,allocation_percent,is_active,is_primary,created_at')
+          .select('id,user_id,name,target_amount,allocation_percent,is_active,is_primary,deadline,created_at')
           .eq('user_id', uid)
           .order('created_at', { ascending: false }),
         supabase
@@ -179,6 +181,7 @@ export default function Settings() {
           allocation_percent: Number(row?.allocation_percent ?? 0),
           is_active: Boolean(row?.is_active ?? true),
           is_primary: Boolean(row?.is_primary ?? false),
+          deadline: row?.deadline || null,
           created_at: String(row?.created_at ?? ''),
         }))
       )
@@ -340,6 +343,7 @@ export default function Settings() {
             target_amount: g.target_amount === null ? null : Number(g.target_amount),
             allocation_percent: Number(g.allocation_percent ?? 0),
             is_active: Boolean(g.is_active),
+            deadline: g.deadline || null,
           })
           .eq('id', g.id)
           .eq('user_id', uid)
@@ -357,6 +361,7 @@ export default function Settings() {
           target_amount: g.target_amount === null ? null : Number(g.target_amount),
           allocation_percent: Number(g.allocation_percent ?? 0),
           is_active: Boolean(g.is_active),
+          deadline: g.deadline || null,
         }))
         const { error: iErr } = await supabase.from('saving_goals').insert(payload)
         if (iErr) throw iErr
@@ -859,8 +864,29 @@ export default function Settings() {
                   </div>
                 ) : null}
 
+                {g.target_amount && g.deadline ? (
+                  <div className="mt-1 flex justify-between text-[10px] text-[#6B7280]">
+                    <span>
+                      Prazo: {new Date(g.deadline).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
+                    </span>
+                    <span>
+                      {(() => {
+                        const now = new Date()
+                        const end = new Date(g.deadline)
+                        // Simple month diff
+                        const months = (end.getFullYear() - now.getFullYear()) * 12 + (end.getMonth() - now.getMonth())
+                        const safeMonths = Math.max(1, months)
+                        const current = Math.max(0, Number(goalSavedById[g.id] ?? 0))
+                        const missing = Math.max(0, Number(g.target_amount) - current)
+                        if (missing <= 0) return <span className="text-emerald-600 font-medium">Concluído</span>
+                        return `Necessário: ${fmt.format(missing / safeMonths)}/mês`
+                      })()}
+                    </span>
+                  </div>
+                ) : null}
+
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-                  <div className="md:col-span-4">
+                  <div className="md:col-span-3">
                     <label className="block text-xs text-[#6B7280] mb-1">Nome</label>
                     <input
                       type="text"
@@ -872,8 +898,7 @@ export default function Settings() {
                       disabled={saving || loading}
                     />
                   </div>
-
-                  <div className="md:col-span-3">
+                  <div className="md:col-span-2">
                     <label className="block text-xs text-[#6B7280] mb-1">Percentual</label>
                     <input
                       type="number"
@@ -910,7 +935,22 @@ export default function Settings() {
                       disabled={saving || loading}
                     />
                   </div>
-
+                  <div className="md:col-span-2">
+                    <label className="block text-xs text-[#6B7280] mb-1">Prazo (opc.)</label>
+                    <input
+                      type="date"
+                      className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
+                      value={g.deadline || ''}
+                      onChange={(e) =>
+                        setGoals((all) =>
+                          all.map((it) =>
+                            it.id === g.id ? { ...it, deadline: e.target.value === '' ? null : e.target.value } : it
+                          )
+                        )
+                      }
+                      disabled={saving || loading}
+                    />
+                  </div>
                   <div className="md:col-span-2 flex items-center justify-between gap-2">
                     <label className="flex items-center gap-2 text-sm text-[#111827]">
                       <input
@@ -980,7 +1020,7 @@ export default function Settings() {
         <div className="mt-5 rounded-2xl border border-[#E4E1D6] bg-white p-4 shadow-[0_10px_30px_rgba(11,19,36,0.06)]">
           <div className="font-semibold text-[#111827]">Nova meta</div>
           <div className="mt-3 grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-            <div className="md:col-span-4">
+            <div className="md:col-span-3">
               <label className="block text-xs text-[#6B7280] mb-1">Nome</label>
               <input
                 type="text"
@@ -990,7 +1030,7 @@ export default function Settings() {
                 disabled={saving || loading}
               />
             </div>
-            <div className="md:col-span-3">
+            <div className="md:col-span-2">
               <label className="block text-xs text-[#6B7280] mb-1">Percentual</label>
               <input
                 type="number"
@@ -1011,6 +1051,16 @@ export default function Settings() {
                 className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
                 value={newGoalTarget}
                 onChange={(e) => setNewGoalTarget(e.target.value === '' ? '' : Number(e.target.value))}
+                disabled={saving || loading}
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-xs text-[#6B7280] mb-1">Prazo (opc.)</label>
+              <input
+                type="date"
+                className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
+                value={newGoalDeadline}
+                onChange={(e) => setNewGoalDeadline(e.target.value)}
                 disabled={saving || loading}
               />
             </div>
@@ -1036,6 +1086,7 @@ export default function Settings() {
                       allocation_percent: Number.isFinite(np) ? np : 0,
                       is_active: Boolean(newGoalActive),
                       is_primary: false,
+                      deadline: newGoalDeadline || null,
                       created_at: new Date().toISOString(),
                     },
                     ...all,
@@ -1043,6 +1094,7 @@ export default function Settings() {
                   setNewGoalName('')
                   setNewGoalTarget('')
                   setNewGoalPercent('')
+                  setNewGoalDeadline('')
                   setNewGoalActive(true)
                 }}
                 disabled={saving || loading}
