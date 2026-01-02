@@ -20,6 +20,7 @@ export default function Header({ session }: { session: any }) {
       { to: '/incomes', label: 'Renda' },
       { to: '/budgets', label: 'Orçamentos' },
       { to: '/transactions', label: 'Transações' },
+      { to: '/recurring', label: 'Recorrentes' },
       { to: '/categories', label: 'Categorias' },
       { to: '/investments', label: 'Investimentos' },
       { to: '/settings', label: 'Planejamento' },
