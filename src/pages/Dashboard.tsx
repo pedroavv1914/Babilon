@@ -8,7 +8,15 @@ type BudgetUsage = { category_name: string; limit_amount: number; spent_amount: 
 type Summary = { month: number; year: number; income_amount: number; savings_amount: number; expenses_amount: number }
 type Alert = { id: number; message: string; severity: string }
 type Reserve = { current_amount: number; target_amount: number | null; target_months: number }
-type SavingGoal = { id: number; name: string; target_amount: number | null; allocation_percent: number; is_active: boolean; created_at: string; deadline: string | null }
+type SavingGoal = {
+  id: number
+  name: string
+  target_amount: number | null
+  allocation_percent: number
+  is_active: boolean
+  created_at: string
+  deadline: string | null
+}
 type GoalTx = { goal_id: number | null; amount: number }
 type RecurringExpense = {
   amount: number
@@ -419,7 +427,7 @@ export default function Dashboard() {
             tone="ok"
           />
           <Stat label="Gastos" value={fmt(expenses)} hint="Saídas registradas" tone={expenses > income ? 'warn' : 'neutral'} />
-          <Stat label="Disponível" value={fmt(available)} hint={available < 0 ? 'Atenção: mês no vermelho' : 'Dentro do planejado'} tone={available < 0 ? 'bad' : 'neutral'} />
+          <Stat label="Saldo Restante" value={fmt(available)} hint={available < 0 ? 'Atenção: mês no vermelho' : 'Dentro do planejado'} tone={available < 0 ? 'bad' : 'neutral'} />
         </div>
 
         {/* GRID PRINCIPAL - MAIS LARGO */}
