@@ -678,7 +678,7 @@ export default function Incomes() {
           tone="ok"
         />
         <Stat
-          label="Disponível para gastar"
+          label="Disponível para despesas"
           value={fmt(totals.availableTotal)}
           hint="Renda − ouro guardado"
           tone={totals.availableTotal < 0 ? 'warn' : 'neutral'}
