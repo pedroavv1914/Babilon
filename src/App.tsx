@@ -11,12 +11,15 @@ import Transactions from './pages/Transactions'
 import Investments from './pages/Investments'
 import Incomes from './pages/Incomes'
 import Recurring from './pages/Recurring'
+import Tutorial from './pages/Tutorial'
+import Onboarding from './components/Onboarding'
 import { useEffect, useState } from 'react'
 import { supabase } from './lib/supabaseClient'
 
 function App() {
   const [session, setSession] = useState<any | null | undefined>(undefined)
   const [authReady, setAuthReady] = useState(false)
+  const [showOnboarding, setShowOnboarding] = useState(false)
   const location = useLocation()
   const hideHeader = location.pathname === '/login' || location.pathname === '/register'
   const mainClassName = hideHeader ? 'w-full flex-1' : 'w-full p-4 flex-1'
@@ -24,16 +27,37 @@ function App() {
   useEffect(() => {
     let mounted = true
 
+    const checkTutorial = async (uid: string) => {
+      const { data } = await supabase
+        .from('user_settings')
+        .select('has_seen_tutorial')
+        .eq('user_id', uid)
+        .maybeSingle()
+      
+      if (mounted) {
+        // If no settings found (data is null) OR has_seen_tutorial is false, show onboarding
+        if (!data || data.has_seen_tutorial === false) {
+          setShowOnboarding(true)
+        }
+      }
+    }
+
     supabase.auth.getSession().then(({ data }) => {
       if (!mounted) return
       setSession(data.session ?? null)
       setAuthReady(true)
+      if (data.session?.user) {
+        checkTutorial(data.session.user.id)
+      }
     })
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!mounted) return
       setSession(session ?? null)
       setAuthReady(true)
+      if (session?.user) {
+        checkTutorial(session.user.id)
+      }
     })
     return () => {
       mounted = false
@@ -60,11 +84,15 @@ function App() {
   return (
     <div className="min-h-screen bg-[#F5F2EB] flex flex-col">
       {hideHeader ? null : <Header session={session} />}
+      {showOnboarding && session && (
+        <Onboarding onComplete={() => setShowOnboarding(false)} />
+      )}
       <main className={mainClassName}>
         <Routes>
           <Route path="/login" element={session ? <Navigate to="/" replace /> : <Login />} />
           <Route path="/register" element={session ? <Navigate to="/" replace /> : <Register />} />
           <Route path="/" element={session ? <Dashboard /> : <Navigate to="/login" replace />} />
+          <Route path="/tutorial" element={session ? <Tutorial /> : <Navigate to="/login" replace />} />
           <Route path="/settings" element={session ? <Settings /> : <Navigate to="/login" replace />} />
           <Route path="/incomes" element={session ? <Incomes /> : <Navigate to="/login" replace />} />
           <Route path="/categories" element={session ? <Categories /> : <Navigate to="/login" replace />} />
