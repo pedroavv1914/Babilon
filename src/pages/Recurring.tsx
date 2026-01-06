@@ -212,6 +212,29 @@ export default function Recurring() {
     }
   }
 
+  const handlePayRecurring = async (item: RecurringExpense) => {
+    setSaving(true)
+    setError(null)
+    try {
+      const uid = await getUserId()
+      const { error } = await supabase.from('transactions').insert({
+        user_id: uid,
+        amount: item.amount,
+        kind: 'despesa',
+        occurred_at: new Date().toISOString(),
+        category_id: item.category_id,
+        note: item.name,
+      })
+
+      if (error) throw error
+      setNotice(`Pagamento de "${item.name}" registrado com sucesso!`)
+    } catch (e: any) {
+      setError(e.message || 'Erro ao registrar pagamento.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const confirmDelete = (id: number, type: 'recurring' | 'installment') => {
     setItemToDelete({ id, type })
     setDeleteModalOpen(true)
@@ -534,6 +557,15 @@ export default function Recurring() {
                     {categories.find((c) => c.id === item.category_id)?.name || 'Categoria removida'}
                   </div>
                 )}
+
+                <button
+                  onClick={() => handlePayRecurring(item)}
+                  disabled={saving}
+                  className="mt-4 w-full flex items-center justify-center gap-2 rounded-xl border border-[#C2A14D] text-[#C2A14D] px-3 py-2 text-sm font-medium hover:bg-[#C2A14D] hover:text-white transition-all disabled:opacity-50"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                  Pagar Agora
+                </button>
               </div>
             ))}
             {items.length === 0 && !loading && (
