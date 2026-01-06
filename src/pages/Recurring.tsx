@@ -33,6 +33,7 @@ export default function Recurring() {
   
   const [items, setItems] = useState<RecurringExpense[]>([])
   const [installments, setInstallments] = useState<InstallmentExpense[]>([])
+  const [installmentCounts, setInstallmentCounts] = useState<Record<number, number>>({})
   const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -68,7 +69,8 @@ export default function Recurring() {
       const [
         { data: recData, error: recErr },
         { data: instData, error: instErr },
-        { data: catData, error: catErr }
+        { data: catData, error: catErr },
+        { data: txData, error: txErr }
       ] = await Promise.all([
         supabase
           .from('recurring_expenses')
@@ -81,11 +83,26 @@ export default function Recurring() {
           .eq('user_id', uid)
           .order('created_at', { ascending: false }),
         supabase.from('categories').select('id,name').eq('user_id', uid).order('name'),
+        supabase
+          .from('transactions')
+          .select('installment_id')
+          .eq('user_id', uid)
+          .not('installment_id', 'is', null)
       ])
 
       if (recErr) throw recErr
       if (instErr) throw instErr
       if (catErr) throw catErr
+      // txErr might be ignored if column doesn't exist yet, but for now assuming migration applied
+      
+      const counts: Record<number, number> = {}
+      if (txData) {
+        for (const t of txData) {
+          const iid = t.installment_id
+          if (iid) counts[iid] = (counts[iid] || 0) + 1
+        }
+      }
+      setInstallmentCounts(counts)
 
       setItems(
         (recData || []).map((i: any) => ({
@@ -235,6 +252,39 @@ export default function Recurring() {
     }
   }
 
+  const handlePayInstallment = async (item: InstallmentExpense) => {
+    setSaving(true)
+    setError(null)
+    try {
+      const uid = await getUserId()
+      // Calculate current installment number for note
+      const currentCount = installmentCounts[item.id] || 0
+      const nextNum = currentCount + 1
+      
+      if (nextNum > item.total_installments) {
+        throw new Error('Todas as parcelas já foram pagas.')
+      }
+
+      const { error } = await supabase.from('transactions').insert({
+        user_id: uid,
+        amount: item.amount,
+        kind: 'despesa',
+        occurred_at: new Date().toISOString(),
+        category_id: item.category_id,
+        note: `${item.name} (${nextNum}/${item.total_installments})`,
+        installment_id: item.id
+      })
+
+      if (error) throw error
+      setNotice(`Pagamento da parcela ${nextNum} de "${item.name}" registrado!`)
+      await load() // Reload to update counts
+    } catch (e: any) {
+      setError(e.message || 'Erro ao registrar pagamento.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const confirmDelete = (id: number, type: 'recurring' | 'installment') => {
     setItemToDelete({ id, type })
     setDeleteModalOpen(true)
@@ -279,34 +329,16 @@ export default function Recurring() {
   }
 
   const getInstallmentProgress = (item: InstallmentExpense) => {
-    const start = new Date(item.start_date)
-    const now = new Date()
-    // Calculate month difference
-    const diffMonths = (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth())
-    
-    // Installment number (1-based)
-    // If diffMonths is 0 (same month), it's installment 1.
-    // If diffMonths < 0, it hasn't started yet (0).
-    let current = diffMonths + 1
-    
-    if (current < 1) current = 0
-    if (current > item.total_installments) current = item.total_installments
+    // New logic: based on paid count
+    const paidCount = installmentCounts[item.id] || 0
+    let current = paidCount
     
     // Status
     let status = 'active'
     if (current === 0) status = 'future'
-    if (current >= item.total_installments && diffMonths >= item.total_installments) status = 'completed' // Actually finished last month or before
+    if (current >= item.total_installments) status = 'completed'
 
-    // If current == total, it's the last one. If diffMonths >= total, it's really over.
-    // Let's refine:
-    // Mês 1: diff 0, current 1
-    // ...
-    // Mês 10: diff 9, current 10 (Last one)
-    // Mês 11: diff 10, current 10 (Finished) -> status completed
-    
-    const isCompleted = diffMonths >= item.total_installments
-    
-    return { current, status, isCompleted }
+    return { current, status, isCompleted: current >= item.total_installments }
   }
 
   const totalMonthlyRecurring = useMemo(() => {
@@ -714,6 +746,17 @@ export default function Recurring() {
                       <span>Total: {fmt.format(item.amount * item.total_installments)}</span>
                       <span>Início: {new Date(item.start_date).toLocaleDateString('pt-BR')}</span>
                     </div>
+
+                    {!isCompleted && (
+                      <button
+                        onClick={() => handlePayInstallment(item)}
+                        disabled={saving}
+                        className="mt-3 w-full flex items-center justify-center gap-2 rounded-xl border border-[#C2A14D] text-[#C2A14D] px-3 py-2 text-sm font-medium hover:bg-[#C2A14D] hover:text-white transition-all disabled:opacity-50"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                        Pagar Parcela
+                      </button>
+                    )}
                   </div>
                 </div>
               )
