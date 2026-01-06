@@ -24,6 +24,7 @@ export default function Header({ session }: { session: any }) {
       { to: '/categories', label: 'Categorias' },
       { to: '/investments', label: 'Investimentos' },
       { to: '/settings', label: 'Planejamento' },
+      { to: '/tutorial', label: 'Ajuda' },
     ],
     []
   )
