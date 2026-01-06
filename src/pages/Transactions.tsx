@@ -14,8 +14,10 @@ type GoalLite = { id: number; name: string }
 export default function Transactions() {
   const [categories, setCategories] = useState<Category[]>([])
   const [goals, setGoals] = useState<GoalLite[]>([])
+  const [installments, setInstallments] = useState<{ id: number; name: string }[]>([])
   const [categoryId, setCategoryId] = useState<number | null>(null)
   const [goalId, setGoalId] = useState<number | null>(null)
+  const [installmentId, setInstallmentId] = useState<number | null>(null)
   const [amount, setAmount] = useState<number>(0)
   const [kind, setKind] = useState<TransactionKind>('despesa')
   const [note, setNote] = useState<string>('')
@@ -165,6 +167,11 @@ export default function Transactions() {
       if (seq !== loadSeq.current) return
       setGoals((gs || []).map((g: any) => ({ id: Number(g.id), name: String(g.name ?? '') })))
 
+      const { data: insts, error: instError } = await supabase.from('installment_expenses').select('id,name').eq('user_id', uid).order('created_at', { ascending: false })
+      if (instError) throw instError
+      if (seq !== loadSeq.current) return
+      setInstallments((insts || []).map((i: any) => ({ id: Number(i.id), name: String(i.name) })))
+
       const { data: budgetRows, error: budgetsError } = await supabase
         .from('budgets')
         .select('category_id,limit_amount')
@@ -262,7 +269,10 @@ export default function Transactions() {
       return
     }
     const payload: any = { user_id: uid, amount, kind, occurred_at: date, note: note || null }
-    if (kind === 'despesa' && categoryId) payload.category_id = categoryId
+    if (kind === 'despesa') {
+      if (categoryId) payload.category_id = categoryId
+      if (installmentId) payload.installment_id = installmentId
+    }
     if (kind === 'aporte_meta' && goalId) payload.goal_id = goalId
     const { error } = await supabase.from('transactions').insert(payload)
     if (error) setError(error.message)
@@ -271,6 +281,7 @@ export default function Transactions() {
     setKind('despesa')
     setCategoryId(null)
     setGoalId(null)
+    setInstallmentId(null)
     await load()
   }
 
@@ -419,22 +430,40 @@ export default function Transactions() {
             </div>
 
             {kind === 'despesa' && (
-              <div>
-                <label className="block text-xs text-[#6B7280] mb-1">Categoria</label>
-                <select
-                  className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
-                  value={categoryId ?? ''}
-                  onChange={(e) => setCategoryId(e.target.value ? Number(e.target.value) : null)}
-                  disabled={loading}
-                >
-                  <option value="">Sem categoria</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <>
+                <div>
+                  <label className="block text-xs text-[#6B7280] mb-1">Categoria</label>
+                  <select
+                    className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
+                    value={categoryId ?? ''}
+                    onChange={(e) => setCategoryId(e.target.value ? Number(e.target.value) : null)}
+                    disabled={loading}
+                  >
+                    <option value="">Sem categoria</option>
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-[#6B7280] mb-1">Vincular a Parcelamento (Opcional)</label>
+                  <select
+                    className="w-full rounded-xl border border-[#D6D3C8] bg-white px-3 py-2 text-sm"
+                    value={installmentId ?? ''}
+                    onChange={(e) => setInstallmentId(e.target.value ? Number(e.target.value) : null)}
+                    disabled={loading}
+                  >
+                    <option value="">Nenhum</option>
+                    {installments.map((i) => (
+                      <option key={i.id} value={i.id}>
+                        {i.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </>
             )}
 
             {kind === 'aporte_meta' && (
