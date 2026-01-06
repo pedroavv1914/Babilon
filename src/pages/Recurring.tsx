@@ -21,6 +21,7 @@ type InstallmentExpense = {
   total_installments: number
   start_date: string // YYYY-MM-DD
   category_id: number | null
+  paid_installments_offset: number
 }
 
 type Category = {
@@ -116,6 +117,7 @@ export default function Recurring() {
           ...i,
           amount: Number(i.amount),
           total_installments: Number(i.total_installments),
+          paid_installments_offset: Number(i.paid_installments_offset || 0),
         }))
       )
       setCategories(catData || [])
@@ -258,7 +260,7 @@ export default function Recurring() {
     try {
       const uid = await getUserId()
       // Calculate current installment number for note
-      const currentCount = installmentCounts[item.id] || 0
+      const currentCount = (installmentCounts[item.id] || 0) + (item.paid_installments_offset || 0)
       const nextNum = currentCount + 1
       
       if (nextNum > item.total_installments) {
@@ -329,8 +331,8 @@ export default function Recurring() {
   }
 
   const getInstallmentProgress = (item: InstallmentExpense) => {
-    // New logic: based on paid count
-    const paidCount = installmentCounts[item.id] || 0
+    // New logic: based on paid count + offset
+    const paidCount = (installmentCounts[item.id] || 0) + (item.paid_installments_offset || 0)
     let current = paidCount
     
     // Status
