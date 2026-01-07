@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabaseClient'
-import { useNavigate } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 
 type Step = {
@@ -72,12 +71,16 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
   const [highlightStyle, setHighlightStyle] = useState<React.CSSProperties | null>(null)
   const [tooltipStyle, setTooltipStyle] = useState<React.CSSProperties>({})
   const [isVisible, setIsVisible] = useState(false)
-  const navigate = useNavigate()
+  const [fallbackToCenter, setFallbackToCenter] = useState(false)
+  
   const currentStep = TOUR_STEPS[currentStepIndex]
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const retryCountRef = useRef(0)
+  const MAX_RETRIES = 5
 
   const updatePosition = useCallback(() => {
-    if (!currentStep.target) {
+    // If explicitly center or fallback triggered
+    if (!currentStep.target || fallbackToCenter) {
       setHighlightStyle(null)
       setTooltipStyle({})
       setIsVisible(true)
@@ -87,6 +90,8 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
     const element = document.getElementById(currentStep.target)
     
     if (element) {
+      // Element found, reset retries
+      retryCountRef.current = 0
       const rect = element.getBoundingClientRect()
       
       // Highlight Style (Spotlight)
@@ -97,14 +102,14 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
         height: rect.height,
         position: 'fixed',
         borderRadius: window.getComputedStyle(element).borderRadius || '12px',
-        boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.75), 0 0 15px rgba(194, 161, 77, 0.5)', // Dark overlay + Gold glow
+        boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.75), 0 0 0 4px rgba(194, 161, 77, 0.3)', // Dark overlay + Soft border
         zIndex: 60
       })
 
       // Tooltip Position
       let top = 0
       let left = 0
-      const tooltipWidth = 320 // approximate width
+      const tooltipWidth = 320 
       const gap = 16
 
       switch (currentStep.position) {
@@ -113,7 +118,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
           left = rect.left + (rect.width / 2) - (tooltipWidth / 2)
           break
         case 'top':
-          top = rect.top - gap - 200 // approximate height
+          top = rect.top - gap - 200 
           left = rect.left + (rect.width / 2) - (tooltipWidth / 2)
           break
         case 'right':
@@ -125,10 +130,10 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
           left = rect.left
       }
 
-      // Boundary checks (keep on screen)
+      // Boundary checks
       if (left < 10) left = 10
       if (left + tooltipWidth > window.innerWidth - 10) left = window.innerWidth - tooltipWidth - 10
-      if (top > window.innerHeight - 200) top = rect.top - 200 // flip to top if too low
+      if (top > window.innerHeight - 200) top = rect.top - 200
 
       setTooltipStyle({
         top,
@@ -139,18 +144,26 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
       
       setIsVisible(true)
     } else {
-      // Element not found, retry shortly (e.g. after route change)
-      retryTimeoutRef.current = setTimeout(updatePosition, 100)
+      // Element not found logic
+      if (retryCountRef.current < MAX_RETRIES) {
+        retryCountRef.current += 1
+        retryTimeoutRef.current = setTimeout(updatePosition, 100)
+      } else {
+        // Give up and show center modal
+        setFallbackToCenter(true)
+        setIsVisible(true)
+      }
     }
-  }, [currentStep])
+  }, [currentStep, fallbackToCenter])
 
   useEffect(() => {
+    // Reset state on step change
     setIsVisible(false)
+    setFallbackToCenter(false)
+    retryCountRef.current = 0
     
-    // Clear previous timeout
     if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current)
 
-    // Small delay to allow UI updates/transitions
     const timer = setTimeout(() => {
       updatePosition()
     }, 300)
@@ -174,6 +187,12 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
     }
   }
 
+  const handlePrev = () => {
+    if (currentStepIndex > 0) {
+      setCurrentStepIndex(prev => prev - 1)
+    }
+  }
+
   const handleSkip = async () => {
     await completeTutorial()
   }
@@ -194,7 +213,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
     }
   }
 
-  const renderContent = () => (
+  const renderContent = (isModal: boolean) => (
     <div className="relative font-sans text-left">
       <div className="flex items-center gap-2 mb-3">
         <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#C2A14D] text-[10px] font-bold text-white">
@@ -205,28 +224,46 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
         </span>
       </div>
       
-      <h3 className="mb-2 text-lg font-bold text-[#111827]">
+      {isModal && (
+        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-[#C2A14D]/10 text-2xl">
+          🏛️
+        </div>
+      )}
+      
+      <h3 className={`mb-2 font-bold text-[#111827] ${isModal ? 'text-2xl text-center' : 'text-lg'}`}>
         {currentStep.title}
       </h3>
       
-      <p className="mb-6 text-sm leading-relaxed text-[#4B5563]">
+      <p className={`mb-6 text-sm leading-relaxed text-[#4B5563] ${isModal ? 'text-center' : ''}`}>
         {currentStep.content}
       </p>
 
-      <div className="flex items-center justify-between gap-4">
-        <button
-          onClick={handleSkip}
-          className="text-xs font-medium text-[#9CA3AF] hover:text-[#6B7280] transition-colors"
-        >
-          Pular tour
-        </button>
+      <div className="flex items-center justify-between gap-4 mt-auto">
+        <div className="flex gap-4">
+          <button
+            onClick={handleSkip}
+            className="text-xs font-medium text-[#9CA3AF] hover:text-[#6B7280] transition-colors"
+          >
+            Pular
+          </button>
+        </div>
         
-        <button
-          onClick={handleNext}
-          className="rounded-lg bg-[#0B1324] px-5 py-2.5 text-sm font-semibold text-[#C2A14D] shadow-lg hover:bg-[#17233A] hover:shadow-xl transition-all active:scale-95"
-        >
-          {currentStep.action}
-        </button>
+        <div className="flex gap-2">
+          {currentStepIndex > 0 && (
+             <button
+             onClick={handlePrev}
+             className="rounded-lg border border-[#D6D3C8] bg-white px-4 py-2 text-sm font-medium text-[#6B7280] shadow-sm hover:bg-[#F9FAFB] transition-all"
+           >
+             Voltar
+           </button>
+          )}
+          <button
+            onClick={handleNext}
+            className="rounded-lg bg-[#0B1324] px-5 py-2 text-sm font-semibold text-[#C2A14D] shadow-lg hover:bg-[#17233A] hover:shadow-xl transition-all active:scale-95"
+          >
+            {currentStep.action}
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -234,41 +271,39 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
   // Portal to ensure it's on top of everything
   return createPortal(
     <>
-      {/* Central Modal Mode */}
-      {!currentStep.target && (
+      {/* Pulse Animation Style */}
+      <style>
+        {`
+          @keyframes pulse-ring {
+            0% { transform: scale(1); opacity: 0.4; }
+            100% { transform: scale(1.15); opacity: 0; }
+          }
+          .spotlight-pulse::after {
+            content: '';
+            position: absolute;
+            top: -4px; left: -4px; right: -4px; bottom: -4px;
+            border-radius: inherit;
+            border: 2px solid #C2A14D;
+            animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+          }
+        `}
+      </style>
+
+      {/* Central Modal Mode (or Fallback) */}
+      {(!currentStep.target || fallbackToCenter) && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-300">
-          <div className="w-full max-w-md overflow-hidden rounded-2xl bg-[#FBFAF7] border border-[#D6D3C8] shadow-2xl p-8 text-center animate-in zoom-in-95 duration-300">
-            <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-[#C2A14D]/10 text-3xl">
-              🏛️
-            </div>
-            <h2 className="mb-3 text-2xl font-bold text-[#111827] font-[ui-serif,Georgia,serif]">
-              {currentStep.title}
-            </h2>
-            <p className="mb-8 text-[#6B7280] leading-relaxed">
-              {currentStep.content}
-            </p>
-            <button
-              onClick={handleNext}
-              className="w-full rounded-xl bg-[#C2A14D] px-6 py-3.5 text-sm font-semibold text-white shadow-lg hover:bg-[#B08D3B] hover:shadow-xl transition-all transform hover:-translate-y-0.5 active:translate-y-0"
-            >
-              {currentStep.action}
-            </button>
-            <button
-              onClick={handleSkip}
-              className="mt-4 text-xs text-[#9CA3AF] hover:text-[#6B7280]"
-            >
-              Pular introdução
-            </button>
+          <div className="w-full max-w-md overflow-hidden rounded-2xl bg-[#FBFAF7] border border-[#D6D3C8] shadow-2xl p-8 animate-in zoom-in-95 duration-300">
+            {renderContent(true)}
           </div>
         </div>
       )}
 
       {/* Spotlight Mode */}
-      {currentStep.target && isVisible && highlightStyle && (
+      {currentStep.target && !fallbackToCenter && isVisible && highlightStyle && (
         <>
           {/* Spotlight Overlay */}
           <div 
-            className="pointer-events-none transition-all duration-500 ease-in-out"
+            className="spotlight-pulse pointer-events-none transition-all duration-500 ease-in-out"
             style={highlightStyle} 
           />
           
@@ -277,8 +312,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
             className="fixed w-80 rounded-2xl bg-[#FBFAF7] border border-[#D6D3C8] p-5 shadow-2xl transition-all duration-500 ease-in-out animate-in fade-in slide-in-from-bottom-4"
             style={tooltipStyle}
           >
-            {/* Arrow/Pointer (Optional, simplified as CSS triangle if needed, omitted for cleaner look) */}
-            {renderContent()}
+            {renderContent(false)}
           </div>
         </>
       )}
