@@ -28,6 +28,11 @@ function App() {
     let mounted = true
 
     const checkTutorial = async (uid: string) => {
+      // Check local storage first to prevent flash on reload
+      if (localStorage.getItem('has_seen_tutorial') === 'true') {
+        return
+      }
+
       const { data } = await supabase
         .from('user_settings')
         .select('has_seen_tutorial')
@@ -38,6 +43,9 @@ function App() {
         // If no settings found (data is null) OR has_seen_tutorial is false, show onboarding
         if (!data || data.has_seen_tutorial === false) {
           setShowOnboarding(true)
+        } else if (data.has_seen_tutorial === true) {
+          // Sync local storage if DB says true
+          localStorage.setItem('has_seen_tutorial', 'true')
         }
       }
     }
