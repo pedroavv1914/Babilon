@@ -84,15 +84,6 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
     const mobileCheck = window.innerWidth < 768
     setIsMobile(mobileCheck)
 
-    // Force center/bottom sheet if mobile
-    if (mobileCheck) {
-      setHighlightStyle(null)
-      setTooltipStyle({})
-      setIsVisible(true)
-      return
-    }
-
-    // Standard Desktop Logic
     if (!currentStep.target || fallbackToCenter) {
       setHighlightStyle(null)
       setTooltipStyle({})
@@ -106,6 +97,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
       retryCountRef.current = 0
       const rect = element.getBoundingClientRect()
       
+      // Calculate highlight style for BOTH mobile and desktop
       setHighlightStyle({
         top: rect.top,
         left: rect.left,
@@ -113,10 +105,28 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
         height: rect.height,
         position: 'fixed',
         borderRadius: window.getComputedStyle(element).borderRadius || '12px',
-        boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.75), 0 0 0 4px rgba(194, 161, 77, 0.3)',
+        // Desktop uses shadow for dimming, Mobile uses simplified border
+        boxShadow: mobileCheck 
+          ? '0 0 0 4px #C2A14D' // Simple gold ring for mobile
+          : '0 0 0 9999px rgba(0, 0, 0, 0.75), 0 0 0 4px rgba(194, 161, 77, 0.3)', // Full dim for desktop
         zIndex: 60
       })
 
+      // Mobile Specific Logic: Scroll to view
+      if (mobileCheck) {
+        // Scroll element to center, accounting for bottom sheet
+        // We use a slight delay to ensure the render cycle is ready
+        setTimeout(() => {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }, 100)
+        
+        // On mobile, we don't calculate tooltip position (we use bottom sheet)
+        setTooltipStyle({})
+        setIsVisible(true)
+        return
+      }
+
+      // Desktop Specific Logic: Calculate Tooltip Position
       let top = 0
       let left = 0
       const tooltipWidth = 320 
@@ -291,6 +301,15 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
             border: 2px solid #C2A14D;
             animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
           }
+          /* Mobile specific pulse for border only */
+          .mobile-pulse {
+             animation: pulse-border 2s infinite;
+          }
+          @keyframes pulse-border {
+             0% { box-shadow: 0 0 0 0px rgba(194, 161, 77, 0.7); }
+             70% { box-shadow: 0 0 0 10px rgba(194, 161, 77, 0); }
+             100% { box-shadow: 0 0 0 0px rgba(194, 161, 77, 0); }
+          }
           .pb-safe {
             padding-bottom: env(safe-area-inset-bottom, 20px);
           }
@@ -299,11 +318,21 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
 
       {/* MOBILE BOTTOM SHEET MODE */}
       {isMobile && (
-         <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/70 backdrop-blur-sm animate-in fade-in duration-300">
-           <div className="w-full bg-[#FBFAF7] rounded-t-2xl border-t border-[#D6D3C8] shadow-[0_-10px_40px_rgba(0,0,0,0.2)] p-6 animate-in slide-in-from-bottom duration-300">
-             {renderContent('bottom-sheet')}
+        <>
+           {/* Mobile Highlight (No Overlay, just Ring) */}
+           {highlightStyle && (
+              <div 
+                className="mobile-pulse pointer-events-none fixed transition-all duration-300 ease-in-out border-2 border-[#C2A14D]"
+                style={{...highlightStyle, boxShadow: undefined, zIndex: 50}} 
+              />
+           )}
+           
+           <div className="fixed inset-0 z-[100] flex items-end justify-center pointer-events-none">
+             <div className="pointer-events-auto w-full bg-[#FBFAF7] rounded-t-2xl border-t border-[#D6D3C8] shadow-[0_-10px_40px_rgba(0,0,0,0.2)] p-6 animate-in slide-in-from-bottom duration-300">
+               {renderContent('bottom-sheet')}
+             </div>
            </div>
-         </div>
+        </>
       )}
 
       {/* DESKTOP MODAL MODE (Fallback or Center) */}
