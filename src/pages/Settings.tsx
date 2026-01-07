@@ -1106,6 +1106,51 @@ export default function Settings() {
         </div>
       </section>
 
+      {/* Segurança e Privacidade */}
+      <section className="rounded-2xl border border-[#D6D3C8] bg-[#FBFAF7] shadow-[0_10px_30px_rgba(11,19,36,0.10)]">
+        <header className="px-5 pt-5 pb-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="font-[ui-serif,Georgia,serif] text-[18px] tracking-[-0.3px] text-[#111827] flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 text-[#C2A14D]">
+                  <path fillRule="evenodd" d="M12 1.5a5.25 5.25 0 00-5.25 5.25v3a3 3 0 00-3 3v6.75a3 3 0 003 3h10.5a3 3 0 003-3v-6.75a3 3 0 00-3-3v-3c0-2.9-2.35-5.25-5.25-5.25zm3.75 8.25v-3a3.75 3.75 0 10-7.5 0v3h7.5z" clipRule="evenodd" />
+                </svg>
+                Segurança e Privacidade
+              </h3>
+              <div className="mt-3 h-[2px] w-16 rounded-full bg-[#C2A14D]" />
+            </div>
+          </div>
+        </header>
+
+        <div className="px-5 pb-5">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="flex items-start gap-3 p-3 rounded-xl bg-white border border-[#E4E1D6]">
+              <div className="mt-1">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 text-emerald-600">
+                  <path fillRule="evenodd" d="M12.516 2.17a.75.75 0 00-1.032 0 11.209 11.209 0 01-7.877 3.08.75.75 0 00-.722.515A12.74 12.74 0 002.25 9.75c0 5.942 4.064 10.933 9.563 12.348a.749.749 0 00.374 0c5.499-1.415 9.563-6.406 9.563-12.348 0-1.352-.272-2.636-.759-3.985a.75.75 0 00-.722-.516l-.143.001c-2.996 0-5.717-1.17-7.734-3.08zm3.094 8.016a.75.75 0 10-1.22-.872l-3.236 4.53L9.53 12.22a.75.75 0 00-1.06 1.06l2.25 2.25a.75.75 0 001.14-.094l3.75-5.25z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-900">Isolamento de Dados (RLS)</p>
+                <p className="text-xs text-gray-500 mt-1">Seus registros financeiros são visíveis exclusivamente para sua conta, garantido por regras de banco de dados.</p>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-3 p-3 rounded-xl bg-white border border-[#E4E1D6]">
+              <div className="mt-1">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 text-[#C2A14D]">
+                  <path fillRule="evenodd" d="M12 1.5a5.25 5.25 0 00-5.25 5.25v3a3 3 0 00-3 3v6.75a3 3 0 003 3h10.5a3 3 0 003-3v-6.75a3 3 0 00-3-3v-3c0-2.9-2.35-5.25-5.25-5.25zm3.75 8.25v-3a3.75 3.75 0 10-7.5 0v3h7.5z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-900">Criptografia e Segurança</p>
+                <p className="text-xs text-gray-500 mt-1">Todas as comunicações são criptografadas via HTTPS. Autenticação segura via Supabase Auth.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="text-xs text-[#6B7280]">Salve para aplicar as regras nas próximas operações.</div>
         <button
