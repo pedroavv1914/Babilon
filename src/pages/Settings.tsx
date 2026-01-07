@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { getUserId } from '../lib/auth'
+import HelpTooltip from '../components/HelpTooltip'
 
 type UserSettings = {
   user_id: string
@@ -581,7 +582,13 @@ export default function Settings() {
 
           <div className="mt-4 space-y-3">
             <div>
-              <label className="block text-xs text-[#6B7280] mb-1">Percentual automático</label>
+              <div className="flex items-center gap-2 mb-1">
+                <label className="block text-xs text-[#6B7280]">Percentual automático</label>
+                <HelpTooltip
+                  content="A parte que você paga a si mesmo primeiro. É retida automaticamente de cada renda lançada."
+                  articleId="metodo-babilonia"
+                />
+              </div>
               <input
                 type="number"
                 step="0.01"
@@ -596,7 +603,13 @@ export default function Settings() {
             </div>
 
             <div>
-              <label className="block text-xs text-[#6B7280] mb-1">Percentual para a reserva</label>
+              <div className="flex items-center gap-2 mb-1">
+                <label className="block text-xs text-[#6B7280]">Percentual para a reserva</label>
+                <HelpTooltip
+                  content="Quanto do valor guardado vai especificamente para sua Reserva de Emergência."
+                  articleId="configuracao-inicial"
+                />
+              </div>
               <input
                 type="number"
                 step="0.01"
