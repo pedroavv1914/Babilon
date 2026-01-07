@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabaseClient'
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts'
 import { getUserId } from '../lib/auth'
 import TipsPanel from '../components/TipsPanel'
+import HelpTooltip from '../components/HelpTooltip'
 import { usePrivacy } from '../lib/PrivacyContext'
 
 type BudgetUsage = { category_name: string; limit_amount: number; spent_amount: number }
@@ -307,11 +308,15 @@ export default function Dashboard() {
     value,
     hint,
     tone = 'neutral',
+    articleId,
+    tooltipContent,
   }: {
     label: string
     value: string
     hint?: string
     tone?: 'neutral' | 'ok' | 'warn' | 'bad'
+    articleId?: string
+    tooltipContent?: string
   }) => {
     const toneCls =
       tone === 'ok'
@@ -325,7 +330,10 @@ export default function Dashboard() {
     return (
       <div className="rounded-2xl border border-[#D6D3C8] bg-[#FBFAF7] p-5 shadow-[0_10px_30px_rgba(11,19,36,0.10)]">
         <div className="flex items-center justify-between">
-          <div className="text-sm text-[#6B7280]">{label}</div>
+          <div className="flex items-center gap-2">
+            <div className="text-sm text-[#6B7280]">{label}</div>
+            {tooltipContent && <HelpTooltip content={tooltipContent} articleId={articleId} />}
+          </div>
           <span className="h-2 w-2 rounded-full bg-[#C2A14D]" />
         </div>
         <div className={`mt-2 text-3xl font-semibold tracking-[-0.6px] ${toneCls}`}>{value}</div>
@@ -412,7 +420,13 @@ export default function Dashboard() {
 
         {/* STATS */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-          <Stat label="Renda do mês" value={fmt(income)} hint={isPrivacyOn ? undefined : "Entrada total do ciclo"} />
+          <Stat 
+            label="Renda do mês" 
+            value={fmt(income)} 
+            hint={isPrivacyOn ? undefined : "Entrada total do ciclo"} 
+            tooltipContent="Soma de todas as entradas registradas neste mês."
+            articleId="cadastro-renda"
+          />
           <Stat
             label="Fixo mensal"
             value={fmt(recurringTotal + installmentsTotal)}
@@ -426,24 +440,32 @@ export default function Dashboard() {
                     : 'Estimativa mensal'
             }
             tone="neutral"
+            tooltipContent="Soma das contas recorrentes e parcelas de cartão deste mês."
+            articleId="recorrentes"
           />
           <Stat
             label="Ouro guardado"
             value={fmt(reserveCurrent)}
             hint={isPrivacyOn ? undefined : (reserveTarget ? `${Math.round((reservePct ?? 0) * 100)}% da meta` : 'Patrimônio de proteção')}
             tone={isPrivacyOn ? 'neutral' : 'ok'}
+            tooltipContent="Valor atual acumulado na sua Reserva de Emergência."
+            articleId="configuracao-inicial"
           />
           <Stat 
             label="Gastos" 
             value={fmt(expenses)} 
             hint={isPrivacyOn ? undefined : "Saídas registradas"} 
             tone={isPrivacyOn ? 'neutral' : (expenses > income ? 'warn' : 'neutral')} 
+            tooltipContent="Total de despesas variáveis e fixas registradas no mês."
+            articleId="transacoes"
           />
           <Stat 
             label="Saldo Restante" 
             value={fmt(available)} 
             hint={isPrivacyOn ? undefined : (available < 0 ? 'Atenção: mês no vermelho' : 'Dentro do planejado')} 
             tone={isPrivacyOn ? 'neutral' : (available < 0 ? 'bad' : 'neutral')} 
+            tooltipContent="O que sobra da renda após tirar os investimentos e descontar os gastos."
+            articleId="dashboard"
           />
         </div>
 
