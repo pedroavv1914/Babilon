@@ -4,11 +4,15 @@ import { BrowserRouter } from 'react-router-dom'
 import './styles/index.css'
 import App from './App'
 
+import { PrivacyProvider } from './lib/PrivacyContext'
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-      <App />
-    </BrowserRouter>
+    <PrivacyProvider>
+      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <App />
+      </BrowserRouter>
+    </PrivacyProvider>
   </React.StrictMode>
 )
 
