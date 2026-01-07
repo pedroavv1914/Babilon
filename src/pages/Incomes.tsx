@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { getUserId } from '../lib/auth'
+import HelpTooltip from '../components/HelpTooltip'
 
 type Income = { id: number; amount: number; month: number; year: number; rule_percent: number | null; created_at: string }
 type UserSettings = { pay_percent: number; reserve_percent: number }
@@ -719,7 +720,13 @@ export default function Incomes() {
 
             <div>
               <div className="flex items-center justify-between">
-                <label className="block text-xs text-[#6B7280] mb-1">Percentual do “pague-se primeiro”</label>
+                <div className="flex items-center gap-2 mb-1">
+                  <label className="block text-xs text-[#6B7280]">Percentual do “pague-se primeiro”</label>
+                  <HelpTooltip
+                    content="Defina quanto desta renda será investido. Use 'Personalizar' para rendas extras (ex: 100%)."
+                    articleId="cadastro-renda"
+                  />
+                </div>
                 <span className="text-xs text-[#6B7280]">Padrão: {(defaultPercent * 100).toFixed(0)}%</span>
               </div>
 
@@ -748,7 +755,13 @@ export default function Incomes() {
             </div>
 
             <div>
-              <label className="block text-xs text-[#6B7280] mb-1">Destino do ouro guardado</label>
+              <div className="flex items-center gap-2 mb-1">
+                <label className="block text-xs text-[#6B7280]">Destino do ouro guardado</label>
+                <HelpTooltip
+                  content="Para onde vai o dinheiro investido? O modo automático segue as regras definidas em Configurações."
+                  articleId="fluxo-sistema"
+                />
+              </div>
               <div className="mt-1 space-y-2">
                 <label className="flex items-center gap-2 text-sm text-[#111827]">
                   <input type="radio" name="allocationMode" checked={allocationMode === 'auto'} onChange={() => setAllocationMode('auto')} />
