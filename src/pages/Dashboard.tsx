@@ -304,6 +304,7 @@ export default function Dashboard() {
   )
 
   const Stat = ({
+    id,
     label,
     value,
     hint,
@@ -311,6 +312,7 @@ export default function Dashboard() {
     articleId,
     tooltipContent,
   }: {
+    id?: string
     label: string
     value: string
     hint?: string
@@ -328,7 +330,7 @@ export default function Dashboard() {
             : 'text-[#111827]'
 
     return (
-      <div className="rounded-2xl border border-[#D6D3C8] bg-[#FBFAF7] p-5 shadow-[0_10px_30px_rgba(11,19,36,0.10)]">
+      <div id={id} className="rounded-2xl border border-[#D6D3C8] bg-[#FBFAF7] p-5 shadow-[0_10px_30px_rgba(11,19,36,0.10)] transition-all duration-300">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="text-sm text-[#6B7280]">{label}</div>
@@ -421,6 +423,7 @@ export default function Dashboard() {
         {/* STATS */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           <Stat 
+            id="kpi-income"
             label="Renda do mês" 
             value={fmt(income)} 
             hint={isPrivacyOn ? undefined : "Entrada total do ciclo"} 
@@ -428,6 +431,7 @@ export default function Dashboard() {
             articleId="cadastro-renda"
           />
           <Stat
+            id="kpi-fixed"
             label="Fixo mensal"
             value={fmt(recurringTotal + installmentsTotal)}
             hint={
@@ -444,6 +448,7 @@ export default function Dashboard() {
             articleId="recorrentes"
           />
           <Stat
+            id="kpi-savings"
             label="Ouro guardado"
             value={fmt(reserveCurrent)}
             hint={isPrivacyOn ? undefined : (reserveTarget ? `${Math.round((reservePct ?? 0) * 100)}% da meta` : 'Patrimônio de proteção')}
@@ -452,6 +457,7 @@ export default function Dashboard() {
             articleId="configuracao-inicial"
           />
           <Stat 
+            id="kpi-expenses"
             label="Gastos" 
             value={fmt(expenses)} 
             hint={isPrivacyOn ? undefined : "Saídas registradas"} 
@@ -460,6 +466,7 @@ export default function Dashboard() {
             articleId="transacoes"
           />
           <Stat 
+            id="kpi-available"
             label="Saldo Restante" 
             value={fmt(available)} 
             hint={isPrivacyOn ? undefined : (available < 0 ? 'Atenção: mês no vermelho' : 'Dentro do planejado')} 
