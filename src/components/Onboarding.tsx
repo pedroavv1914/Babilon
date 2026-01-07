@@ -6,6 +6,7 @@ type Step = {
   target?: string
   title: string
   content: string
+  mobileContent?: string // New field for mobile-specific text
   action: string
   position?: 'bottom' | 'top' | 'left' | 'right' | 'center'
 }
@@ -26,6 +27,7 @@ const TOUR_STEPS: Step[] = [
     target: "kpi-income",
     title: "O Fluxo de Ouro",
     content: "Toda riqueza começa com uma fonte de renda. Monitore suas entradas aqui para saber o limite seguro dos seus gastos.",
+    mobileContent: "Observe o primeiro card no topo da tela. Toda riqueza começa aqui: monitore suas entradas para conhecer seu limite.",
     action: "Entendi",
     position: 'bottom'
   },
@@ -33,6 +35,7 @@ const TOUR_STEPS: Step[] = [
     target: "kpi-savings",
     title: "A Regra de Ouro",
     content: "Uma parte de tudo que você ganha pertence a você. O sistema separa automaticamente sua reserva antes que você possa gastar.",
+    mobileContent: "Veja o segundo card. O sistema separa automaticamente sua reserva antes que você possa gastar.",
     action: "Próximo",
     position: 'bottom'
   },
@@ -40,6 +43,7 @@ const TOUR_STEPS: Step[] = [
     target: "kpi-available",
     title: "Viva com o Restante",
     content: "Aqui está sua verdadeira riqueza disponível para hoje. Respeite este limite e seu ouro se multiplicará com o tempo.",
+    mobileContent: "Confira o card 'Saldo Restante'. Esta é sua verdadeira riqueza disponível para hoje.",
     action: "Continuar",
     position: 'bottom'
   },
@@ -47,6 +51,7 @@ const TOUR_STEPS: Step[] = [
     target: "nav-incomes",
     title: "Alimente a Fonte",
     content: "Registre seus ganhos na aba 'Renda'. O sistema cuidará de calcular sua reserva e metas automaticamente.",
+    mobileContent: "Acesse o menu e escolha 'Renda' para registrar seus ganhos. O sistema calculará tudo automaticamente.",
     action: "Perfeito",
     position: 'bottom'
   },
@@ -54,6 +59,7 @@ const TOUR_STEPS: Step[] = [
     target: "nav-settings",
     title: "Ajuste o Curso",
     content: "No 'Planejamento', você define as regras do seu jogo: quanto quer poupar e quais são seus sonhos.",
+    mobileContent: "No menu 'Planejamento', você define as regras do seu jogo: metas de poupança e sonhos.",
     action: "Vamos lá",
     position: 'bottom'
   },
@@ -112,15 +118,8 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
         zIndex: 60
       })
 
-      // Mobile Specific Logic: Scroll to view
+      // Mobile Specific Logic: REMOVED SCROLL, only set visibility
       if (mobileCheck) {
-        // Scroll element to center, accounting for bottom sheet
-        // We use a slight delay to ensure the render cycle is ready
-        setTimeout(() => {
-          element.scrollIntoView({ behavior: 'smooth', block: 'center' })
-        }, 100)
-        
-        // On mobile, we don't calculate tooltip position (we use bottom sheet)
         setTooltipStyle({})
         setIsVisible(true)
         return
@@ -215,12 +214,13 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
 
   const completeTutorial = async () => {
     try {
+      localStorage.setItem('has_seen_tutorial', 'true')
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
+        // Use UPSERT to ensure the row exists
         await supabase
           .from('user_settings')
-          .update({ has_seen_tutorial: true })
-          .eq('user_id', user.id)
+          .upsert({ user_id: user.id, has_seen_tutorial: true }, { onConflict: 'user_id' })
       }
     } catch (error) {
       console.error('Error completing tutorial:', error)
@@ -251,7 +251,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
       </h3>
       
       <p className={`mb-6 text-sm leading-relaxed text-[#4B5563] ${(mode === 'modal' || mode === 'bottom-sheet') ? 'text-center' : ''}`}>
-        {currentStep.content}
+        {isMobile && currentStep.mobileContent ? currentStep.mobileContent : currentStep.content}
       </p>
 
       <div className="flex items-center justify-between gap-4 mt-auto">
