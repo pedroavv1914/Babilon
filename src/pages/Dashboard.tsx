@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabaseClient'
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts'
 import { getUserId } from '../lib/auth'
 import TipsPanel from '../components/TipsPanel'
+import { usePrivacy } from '../lib/PrivacyContext'
 
 type BudgetUsage = { category_name: string; limit_amount: number; spent_amount: number }
 type Summary = { month: number; year: number; income_amount: number; savings_amount: number; expenses_amount: number }
@@ -39,6 +40,7 @@ export default function Dashboard() {
   const [goalSavedById, setGoalSavedById] = useState<Record<number, number>>({})
   const [recurringTotal, setRecurringTotal] = useState<number>(0)
   const [installmentsTotal, setInstallmentsTotal] = useState<number>(0)
+  const { isPrivacyOn } = usePrivacy()
 
   const now = new Date()
   const [month, setMonth] = useState(now.getMonth() + 1)
@@ -190,7 +192,10 @@ export default function Dashboard() {
     }
   }, [month, year])
 
-  const fmt = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
+  const fmt = (v: number) => {
+    if (isPrivacyOn) return '••••'
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
+  }
 
   const income = Number(summary?.income_amount ?? 0)
   const savings = Number(summary?.savings_amount ?? 0)
@@ -365,7 +370,7 @@ export default function Dashboard() {
 
                 <div className="mt-4 flex flex-wrap items-center gap-2">
                   <Pill variant="sky">Mês: {String(month).padStart(2, '0')}/{year}</Pill>
-                  <Pill variant="gold">Poupança: {(savingsRate * 100).toFixed(1)}%</Pill>
+                  <Pill variant="gold">Poupança: {isPrivacyOn ? '•••' : (savingsRate * 100).toFixed(1)}%</Pill>
                   <Pill>Metas: {fmt(goalsSavedTotal)}</Pill>
                   <Pill>Alertas: {alerts.length}</Pill>
                 </div>
@@ -407,27 +412,39 @@ export default function Dashboard() {
 
         {/* STATS */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-          <Stat label="Renda do mês" value={fmt(income)} hint="Entrada total do ciclo" />
+          <Stat label="Renda do mês" value={fmt(income)} hint={isPrivacyOn ? undefined : "Entrada total do ciclo"} />
           <Stat
             label="Fixo mensal"
             value={fmt(recurringTotal + installmentsTotal)}
             hint={
-              installmentsTotal > 0
-                ? `Fixos: ${fmt(recurringTotal)} + Parc.: ${fmt(installmentsTotal)}`
-                : income > 0
-                  ? `${Math.round((recurringTotal / income) * 100)}% da renda`
-                  : 'Estimativa mensal'
+              isPrivacyOn
+                ? undefined
+                : installmentsTotal > 0
+                  ? `Fixos: ${fmt(recurringTotal)} + Parc.: ${fmt(installmentsTotal)}`
+                  : income > 0
+                    ? `${Math.round((recurringTotal / income) * 100)}% da renda`
+                    : 'Estimativa mensal'
             }
             tone="neutral"
           />
           <Stat
             label="Ouro guardado"
             value={fmt(reserveCurrent)}
-            hint={reserveTarget ? `${Math.round((reservePct ?? 0) * 100)}% da meta` : 'Patrimônio de proteção'}
-            tone="ok"
+            hint={isPrivacyOn ? undefined : (reserveTarget ? `${Math.round((reservePct ?? 0) * 100)}% da meta` : 'Patrimônio de proteção')}
+            tone={isPrivacyOn ? 'neutral' : 'ok'}
           />
-          <Stat label="Gastos" value={fmt(expenses)} hint="Saídas registradas" tone={expenses > income ? 'warn' : 'neutral'} />
-          <Stat label="Saldo Restante" value={fmt(available)} hint={available < 0 ? 'Atenção: mês no vermelho' : 'Dentro do planejado'} tone={available < 0 ? 'bad' : 'neutral'} />
+          <Stat 
+            label="Gastos" 
+            value={fmt(expenses)} 
+            hint={isPrivacyOn ? undefined : "Saídas registradas"} 
+            tone={isPrivacyOn ? 'neutral' : (expenses > income ? 'warn' : 'neutral')} 
+          />
+          <Stat 
+            label="Saldo Restante" 
+            value={fmt(available)} 
+            hint={isPrivacyOn ? undefined : (available < 0 ? 'Atenção: mês no vermelho' : 'Dentro do planejado')} 
+            tone={isPrivacyOn ? 'neutral' : (available < 0 ? 'bad' : 'neutral')} 
+          />
         </div>
 
         {/* GRID PRINCIPAL - MAIS LARGO */}
