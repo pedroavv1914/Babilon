@@ -72,6 +72,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
   const [tooltipStyle, setTooltipStyle] = useState<React.CSSProperties>({})
   const [isVisible, setIsVisible] = useState(false)
   const [fallbackToCenter, setFallbackToCenter] = useState(false)
+  const [isMobile, setIsMobile] = useState(false)
   
   const currentStep = TOUR_STEPS[currentStepIndex]
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -79,7 +80,19 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
   const MAX_RETRIES = 5
 
   const updatePosition = useCallback(() => {
-    // If explicitly center or fallback triggered
+    // Check for mobile breakpoint
+    const mobileCheck = window.innerWidth < 768
+    setIsMobile(mobileCheck)
+
+    // Force center/bottom sheet if mobile
+    if (mobileCheck) {
+      setHighlightStyle(null)
+      setTooltipStyle({})
+      setIsVisible(true)
+      return
+    }
+
+    // Standard Desktop Logic
     if (!currentStep.target || fallbackToCenter) {
       setHighlightStyle(null)
       setTooltipStyle({})
@@ -90,11 +103,9 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
     const element = document.getElementById(currentStep.target)
     
     if (element) {
-      // Element found, reset retries
       retryCountRef.current = 0
       const rect = element.getBoundingClientRect()
       
-      // Highlight Style (Spotlight)
       setHighlightStyle({
         top: rect.top,
         left: rect.left,
@@ -102,11 +113,10 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
         height: rect.height,
         position: 'fixed',
         borderRadius: window.getComputedStyle(element).borderRadius || '12px',
-        boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.75), 0 0 0 4px rgba(194, 161, 77, 0.3)', // Dark overlay + Soft border
+        boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.75), 0 0 0 4px rgba(194, 161, 77, 0.3)',
         zIndex: 60
       })
 
-      // Tooltip Position
       let top = 0
       let left = 0
       const tooltipWidth = 320 
@@ -130,7 +140,6 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
           left = rect.left
       }
 
-      // Boundary checks
       if (left < 10) left = 10
       if (left + tooltipWidth > window.innerWidth - 10) left = window.innerWidth - tooltipWidth - 10
       if (top > window.innerHeight - 200) top = rect.top - 200
@@ -144,12 +153,10 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
       
       setIsVisible(true)
     } else {
-      // Element not found logic
       if (retryCountRef.current < MAX_RETRIES) {
         retryCountRef.current += 1
         retryTimeoutRef.current = setTimeout(updatePosition, 100)
       } else {
-        // Give up and show center modal
         setFallbackToCenter(true)
         setIsVisible(true)
       }
@@ -157,7 +164,6 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
   }, [currentStep, fallbackToCenter])
 
   useEffect(() => {
-    // Reset state on step change
     setIsVisible(false)
     setFallbackToCenter(false)
     retryCountRef.current = 0
@@ -213,8 +219,8 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
     }
   }
 
-  const renderContent = (isModal: boolean) => (
-    <div className="relative font-sans text-left">
+  const renderContent = (mode: 'modal' | 'spotlight' | 'bottom-sheet') => (
+    <div className={`relative font-sans text-left ${mode === 'bottom-sheet' ? 'pb-safe' : ''}`}>
       <div className="flex items-center gap-2 mb-3">
         <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#C2A14D] text-[10px] font-bold text-white">
           {currentStepIndex + 1}
@@ -224,17 +230,17 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
         </span>
       </div>
       
-      {isModal && (
+      {(mode === 'modal' || mode === 'bottom-sheet') && (
         <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-[#C2A14D]/10 text-2xl">
           🏛️
         </div>
       )}
       
-      <h3 className={`mb-2 font-bold text-[#111827] ${isModal ? 'text-2xl text-center' : 'text-lg'}`}>
+      <h3 className={`mb-2 font-bold text-[#111827] ${(mode === 'modal' || mode === 'bottom-sheet') ? 'text-2xl text-center' : 'text-lg'}`}>
         {currentStep.title}
       </h3>
       
-      <p className={`mb-6 text-sm leading-relaxed text-[#4B5563] ${isModal ? 'text-center' : ''}`}>
+      <p className={`mb-6 text-sm leading-relaxed text-[#4B5563] ${(mode === 'modal' || mode === 'bottom-sheet') ? 'text-center' : ''}`}>
         {currentStep.content}
       </p>
 
@@ -271,7 +277,6 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
   // Portal to ensure it's on top of everything
   return createPortal(
     <>
-      {/* Pulse Animation Style */}
       <style>
         {`
           @keyframes pulse-ring {
@@ -286,33 +291,42 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
             border: 2px solid #C2A14D;
             animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
           }
+          .pb-safe {
+            padding-bottom: env(safe-area-inset-bottom, 20px);
+          }
         `}
       </style>
 
-      {/* Central Modal Mode (or Fallback) */}
-      {(!currentStep.target || fallbackToCenter) && (
+      {/* MOBILE BOTTOM SHEET MODE */}
+      {isMobile && (
+         <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/70 backdrop-blur-sm animate-in fade-in duration-300">
+           <div className="w-full bg-[#FBFAF7] rounded-t-2xl border-t border-[#D6D3C8] shadow-[0_-10px_40px_rgba(0,0,0,0.2)] p-6 animate-in slide-in-from-bottom duration-300">
+             {renderContent('bottom-sheet')}
+           </div>
+         </div>
+      )}
+
+      {/* DESKTOP MODAL MODE (Fallback or Center) */}
+      {!isMobile && (!currentStep.target || fallbackToCenter) && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-300">
           <div className="w-full max-w-md overflow-hidden rounded-2xl bg-[#FBFAF7] border border-[#D6D3C8] shadow-2xl p-8 animate-in zoom-in-95 duration-300">
-            {renderContent(true)}
+            {renderContent('modal')}
           </div>
         </div>
       )}
 
-      {/* Spotlight Mode */}
-      {currentStep.target && !fallbackToCenter && isVisible && highlightStyle && (
+      {/* DESKTOP SPOTLIGHT MODE */}
+      {!isMobile && currentStep.target && !fallbackToCenter && isVisible && highlightStyle && (
         <>
-          {/* Spotlight Overlay */}
           <div 
             className="spotlight-pulse pointer-events-none transition-all duration-500 ease-in-out"
             style={highlightStyle} 
           />
-          
-          {/* Tooltip */}
           <div 
             className="fixed w-80 rounded-2xl bg-[#FBFAF7] border border-[#D6D3C8] p-5 shadow-2xl transition-all duration-500 ease-in-out animate-in fade-in slide-in-from-bottom-4"
             style={tooltipStyle}
           >
-            {renderContent(false)}
+            {renderContent('spotlight')}
           </div>
         </>
       )}
