@@ -64,6 +64,7 @@ export default function Header({ session }: { session: any }) {
                   <NavLink
                     key={item.to}
                     to={item.to}
+                    id={`nav-${item.to.replace('/', '') || 'home'}`}
                     className={({ isActive }) =>
                       [
                         'relative px-3 py-2 rounded-xl text-sm transition whitespace-nowrap',
