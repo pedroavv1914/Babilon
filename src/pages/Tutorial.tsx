@@ -1,11 +1,24 @@
-import { useState, useMemo } from 'react'
-import { Link } from 'react-router-dom'
+import { useState, useMemo, useEffect } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { helpContent, HelpCategory, HelpArticle } from '../lib/helpContent'
 
 export default function Tutorial() {
+  const [searchParams] = useSearchParams()
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedArticleId, setSelectedArticleId] = useState<string | null>(null)
   const [expandedCategoryIds, setExpandedCategoryIds] = useState<string[]>(['intro', 'primeiros-passos'])
+
+  // Carrega artigo da URL se houver
+  useEffect(() => {
+    const articleParam = searchParams.get('article')
+    if (articleParam) {
+      setSelectedArticleId(articleParam)
+      const cat = helpContent.find((c) => c.articles.some((a) => a.id === articleParam))
+      if (cat) {
+        setExpandedCategoryIds((prev) => (prev.includes(cat.id) ? prev : [...prev, cat.id]))
+      }
+    }
+  }, [searchParams])
 
   // Filtragem de busca
   const filteredContent = useMemo(() => {
