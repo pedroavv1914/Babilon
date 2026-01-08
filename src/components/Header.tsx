@@ -38,6 +38,43 @@ export default function Header({ session }: { session: any }) {
     .join('')
     .toUpperCase()
 
+  const MobileProfile = () => (
+    <div className="mb-4 rounded-2xl bg-[#0F172A] border border-[#17233A] p-4 shadow-lg">
+      <div className="flex items-start gap-4">
+        {/* Avatar Circular com Status */}
+        <div className="relative shrink-0">
+          <div className="h-12 w-12 rounded-full bg-[#0B1324] border border-[#C2A14D]/40 flex items-center justify-center text-base font-bold text-[#E7E1D4] shadow-[0_0_15px_rgba(194,161,77,0.1)]">
+            {initials}
+          </div>
+          <div className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-[#0F172A] flex items-center justify-center border border-[#17233A]">
+            <div className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
+          </div>
+        </div>
+
+        {/* Informações do Usuário */}
+        <div className="flex-1 min-w-0">
+          <h3 className="font-[ui-serif,Georgia,serif] text-lg text-[#FBFAF7] truncate leading-tight">
+            {userLabel}
+          </h3>
+          
+          <div className="flex items-center gap-1.5 mt-1">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 text-emerald-500">
+              <path fillRule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clipRule="evenodd" />
+            </svg>
+            <span className="text-xs font-medium text-emerald-500">Sessão segura</span>
+          </div>
+
+          <p className="text-[10px] text-[#9CA3AF] mt-1.5 flex items-center gap-1.5">
+            <span className="w-1 h-1 rounded-full bg-[#9CA3AF]" />
+            Conta ativa
+            <span className="w-1 h-1 rounded-full bg-[#9CA3AF]" />
+            Autenticado via Supabase
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+
   return (
     <header className="sticky top-0 z-50">
       <div className="bg-[#0B1324] border-b border-[#17233A]">
@@ -147,7 +184,8 @@ export default function Header({ session }: { session: any }) {
       {session && open && (
         <div className="xl:hidden bg-[#0B1324]/95 border-b border-[#17233A] backdrop-blur">
           <div className="w-full px-4">
-            <div className="py-3">
+            <div className="py-4">
+              <MobileProfile />
               <div className="rounded-xl bg-[#0F172A] border border-[#17233A] p-2 space-y-1">
                 {nav.map((item) => (
                   <NavLink
