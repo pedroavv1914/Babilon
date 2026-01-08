@@ -91,7 +91,7 @@ export default function Dashboard() {
               .select('target_amount,target_months')
               .eq('user_id', uid)
               .maybeSingle(),
-            supabase.from('transactions').select('amount').eq('user_id', uid).eq('kind', 'aporte_reserva').limit(10000),
+            supabase.from('transactions').select('amount').eq('user_id', uid).in('kind', ['aporte_reserva', 'transferencia_reserva']).limit(10000),
             supabase
               .from('saving_goals')
               .select('id,name,target_amount,allocation_percent,is_active,created_at,deadline')
@@ -101,7 +101,7 @@ export default function Dashboard() {
               .from('transactions')
               .select('goal_id,amount')
               .eq('user_id', uid)
-              .eq('kind', 'aporte_meta')
+              .in('kind', ['aporte_meta', 'transferencia_meta'])
               .not('goal_id', 'is', null)
               .limit(5000),
             supabase
@@ -118,7 +118,7 @@ export default function Dashboard() {
         if (txErr) throw txErr
         const reserveCurrentFromTx = Math.max(
           0,
-          (reserveTx || []).reduce((acc: number, row: any) => acc + Math.max(0, Number(row?.amount ?? 0)), 0)
+          (reserveTx || []).reduce((acc: number, row: any) => acc + Number(row?.amount ?? 0), 0)
         )
 
         setUsage(u || [])
@@ -145,7 +145,7 @@ export default function Dashboard() {
         for (const t of (tx || []) as GoalTx[]) {
           const gid = Number((t as any).goal_id ?? 0)
           if (!gid) continue
-          goalMap[gid] = (goalMap[gid] ?? 0) + Math.max(0, Number((t as any).amount ?? 0))
+          goalMap[gid] = (goalMap[gid] ?? 0) + Number((t as any).amount ?? 0)
         }
         setGoalSavedById(goalMap)
 
