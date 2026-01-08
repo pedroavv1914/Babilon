@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { getUserId } from '../lib/auth'
 import HelpTooltip from '../components/HelpTooltip'
+import GoalTransferModal from '../components/GoalTransferModal'
 
 type UserSettings = {
   user_id: string
@@ -56,6 +57,7 @@ export default function Settings() {
   const [exampleIncome, setExampleIncome] = useState<number>(5000)
   const [monthlyAporte, setMonthlyAporte] = useState<number>(500)
   const [primarySimulatedAporte, setPrimarySimulatedAporte] = useState<number>(0)
+  const [showTransferModal, setShowTransferModal] = useState(false)
   const loadSeq = useRef(0)
 
   const fmt = useMemo(() => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }), [])
@@ -86,12 +88,12 @@ export default function Settings() {
             .maybeSingle(),
         supabase.from('emergency_reserve').select('user_id,target_months,target_amount,current_amount').eq('user_id', uid).maybeSingle(),
         supabase
-          .from('transactions')
-          .select('id,amount,occurred_at,kind,income_id')
-          .eq('user_id', uid)
-          .eq('kind', 'aporte_reserva')
-          .order('occurred_at', { ascending: false })
-          .limit(5000),
+            .from('transactions')
+            .select('id,amount,occurred_at,kind,income_id')
+            .eq('user_id', uid)
+            .in('kind', ['aporte_reserva', 'transferencia_reserva'])
+            .order('occurred_at', { ascending: false })
+            .limit(5000),
         supabase
           .from('vw_monthly_summary')
           .select('month,year,expenses_amount')
@@ -105,13 +107,13 @@ export default function Settings() {
           .eq('user_id', uid)
           .order('created_at', { ascending: false }),
         supabase
-          .from('transactions')
-          .select('id,goal_id,amount,occurred_at,kind,income_id')
-          .eq('user_id', uid)
-          .eq('kind', 'aporte_meta')
-          .not('goal_id', 'is', null)
-          .order('occurred_at', { ascending: false })
-          .limit(5000),
+            .from('transactions')
+            .select('id,goal_id,amount,occurred_at,kind,income_id')
+            .eq('user_id', uid)
+            .in('kind', ['aporte_meta', 'transferencia_meta'])
+            .not('goal_id', 'is', null)
+            .order('occurred_at', { ascending: false })
+            .limit(5000),
       ])
       if (sErr) throw sErr
       if (rErr) throw rErr
@@ -146,7 +148,7 @@ export default function Settings() {
 
           const reserveCurrentFromTx = Math.max(
             0,
-            reserveTxListRaw.reduce((acc: number, row: any) => acc + Math.max(0, Number(row?.amount ?? 0)), 0)
+            reserveTxListRaw.reduce((acc: number, row: any) => acc + Number(row?.amount ?? 0), 0)
           )
           const out: Reserve = r
             ? {
@@ -191,7 +193,7 @@ export default function Settings() {
       for (const t of (tx || []) as TxHistoryItem[]) {
         const gid = Number((t as any).goal_id ?? 0)
         if (!gid) continue
-        goalMap[gid] = (goalMap[gid] ?? 0) + Math.max(0, Number((t as any).amount ?? 0))
+        goalMap[gid] = (goalMap[gid] ?? 0) + Number((t as any).amount ?? 0)
         if (!goalTxMap[gid]) goalTxMap[gid] = []
         goalTxMap[gid].push(t)
       }
@@ -774,9 +776,17 @@ export default function Settings() {
             <div className="font-semibold text-[#111827]">Metas</div>
             <div className="mt-1 text-xs text-[#6B7280]">Crie metas e defina percentuais de aporte por renda.</div>
           </div>
-          <span className="text-xs text-[#6B7280] rounded-full border border-[#D6D3C8] bg-white px-2 py-1">
-            Ativas: {goals.filter((g) => g.is_active).length}
-          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowTransferModal(true)}
+              className="text-xs text-[#C2A14D] border border-[#C2A14D] rounded-full px-3 py-1 hover:bg-[#C2A14D] hover:text-white transition-colors"
+            >
+              Transferir Valores
+            </button>
+            <span className="text-xs text-[#6B7280] rounded-full border border-[#D6D3C8] bg-white px-2 py-1">
+              Ativas: {goals.filter((g) => g.is_active).length}
+            </span>
+          </div>
         </div>
 
         <div className="mt-3 h-[2px] w-16 rounded-full bg-[#C2A14D]" />
@@ -1174,6 +1184,20 @@ export default function Settings() {
           {saving ? 'Salvando…' : 'Salvar planejamento'}
         </button>
       </div>
+      {showTransferModal && settings && (
+        <GoalTransferModal
+          isOpen={showTransferModal}
+          onClose={() => setShowTransferModal(false)}
+          onSuccess={() => {
+            load()
+            setNotice('Transferência realizada com sucesso!')
+          }}
+          goals={goals.filter(g => g.is_active)}
+          goalBalances={goalSavedById}
+          reserveBalance={reserveCurrent}
+          userId={settings.user_id}
+        />
+      )}
     </div>
   )
 }
