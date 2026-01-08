@@ -92,6 +92,19 @@ export const helpContent: HelpCategory[] = [
         `
       },
       {
+        id: 'transferencias',
+        title: 'Realocando Recursos (Transferências)',
+        content: `
+          <p>Mudança de planos faz parte da estratégia. Você pode transferir valores entre suas Metas e sua Reserva de Emergência.</p>
+          <ol class="list-decimal list-inside space-y-2 mt-2 ml-1">
+            <li>Vá até a aba <strong>Planejamento</strong>.</li>
+            <li>Na seção de Metas, clique no botão <strong>Transferir Valores</strong>.</li>
+            <li>Escolha a <strong>Origem</strong> (de onde o dinheiro sai) e o <strong>Destino</strong> (para onde ele vai).</li>
+          </ol>
+          <p class="mt-2">O sistema garante que todas as transferências fiquem registradas no histórico para você não perder o controle.</p>
+        `
+      },
+      {
         id: 'dashboard',
         title: 'Entendendo o Dashboard',
         content: `
